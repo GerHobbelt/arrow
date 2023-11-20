@@ -75,10 +75,16 @@ jclass configuration_builder_class_;
 // refs for self.
 static jclass gandiva_exception_;
 static jclass vector_expander_class_;
+static jclass listvector_expander_class_;
 static jclass vector_expander_ret_class_;
+static jclass list_expander_ret_class_;
 static jmethodID vector_expander_method_;
+static jmethodID listvector_expander_method_;
 static jfieldID vector_expander_ret_address_;
 static jfieldID vector_expander_ret_capacity_;
+static jfieldID list_expander_ret_address_;
+static jfieldID list_expander_valid_address_;
+static jfieldID list_expander_ret_capacity_;
 
 // module maps
 gandiva::IdToModuleMap<std::shared_ptr<ProjectorHolder>> projector_modules_;
@@ -110,15 +116,37 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved) {
       vector_expander_class_, "expandOutputVectorAtIndex",
       "(IJ)Lorg/apache/arrow/gandiva/evaluator/VectorExpander$ExpandResult;");
 
+  jclass local_listexpander_class =
+      env->FindClass("org/apache/arrow/gandiva/evaluator/ListVectorExpander");
+  listvector_expander_class_ = (jclass)env->NewGlobalRef(local_listexpander_class);
+  env->DeleteLocalRef(local_listexpander_class);
+
+  listvector_expander_method_ = env->GetMethodID(
+      listvector_expander_class_, "expandOutputVectorAtIndex",
+      "(IJ)Lorg/apache/arrow/gandiva/evaluator/ListVectorExpander$ExpandResult;");
+
   jclass local_expander_ret_class =
       env->FindClass("org/apache/arrow/gandiva/evaluator/VectorExpander$ExpandResult");
   vector_expander_ret_class_ = (jclass)env->NewGlobalRef(local_expander_ret_class);
   env->DeleteLocalRef(local_expander_ret_class);
 
+  jclass local_list_expander_ret_class =
+      env->FindClass("org/apache/arrow/gandiva/evaluator/ListVectorExpander$ExpandResult");
+  list_expander_ret_class_ = (jclass)env->NewGlobalRef(local_list_expander_ret_class);
+  env->DeleteLocalRef(local_list_expander_ret_class);
+
   vector_expander_ret_address_ =
       env->GetFieldID(vector_expander_ret_class_, "address", "J");
   vector_expander_ret_capacity_ =
       env->GetFieldID(vector_expander_ret_class_, "capacity", "J");
+
+  list_expander_ret_address_ =
+      env->GetFieldID(list_expander_ret_class_, "address", "J");
+  list_expander_ret_capacity_ =
+      env->GetFieldID(list_expander_ret_class_, "capacity", "J");
+  list_expander_valid_address_ =
+      env->GetFieldID(list_expander_ret_class_, "validityaddress", "J");
+
   return JNI_VERSION;
 }
 
@@ -128,8 +156,12 @@ void JNI_OnUnload(JavaVM* vm, void* reserved) {
   env->DeleteGlobalRef(configuration_builder_class_);
   env->DeleteGlobalRef(gandiva_exception_);
   env->DeleteGlobalRef(vector_expander_class_);
+  env->DeleteGlobalRef(listvector_expander_class_);
   env->DeleteGlobalRef(vector_expander_ret_class_);
+  env->DeleteGlobalRef(list_expander_ret_class_);
 }
+
+DataTypePtr SimpleProtoTypeToDataType(const gandiva::types::GandivaType& gandiva_type);
 
 DataTypePtr ProtoTypeToTime32(const gandiva::types::ExtGandivaType& ext_type) {
   switch (ext_type.timeunit()) {
@@ -183,9 +215,14 @@ DataTypePtr ProtoTypeToInterval(const gandiva::types::ExtGandivaType& ext_type) 
   }
 }
 
-DataTypePtr ProtoTypeToDataType(const gandiva::types::ExtGandivaType& ext_type) {
-  switch (ext_type.type()) {
-    case gandiva::types::NONE:
+DataTypePtr ProtoTypeToList(const types::ExtGandivaType& ext_type) {
+  DataTypePtr childType = SimpleProtoTypeToDataType(ext_type.listtype());
+  return arrow::list(childType);
+}
+
+DataTypePtr SimpleProtoTypeToDataType(const types::GandivaType& gandiva_type) {
+  switch (gandiva_type) {
+    case types::NONE:
       return arrow::null();
     case gandiva::types::BOOL:
       return arrow::boolean();
@@ -219,7 +256,17 @@ DataTypePtr ProtoTypeToDataType(const gandiva::types::ExtGandivaType& ext_type) 
       return arrow::date32();
     case gandiva::types::DATE64:
       return arrow::date64();
-    case gandiva::types::DECIMAL:
+    default:
+      std::cerr << "Unknown data type: " << gandiva_type << "\n";
+      return nullptr;
+  }
+}
+
+
+
+DataTypePtr ProtoTypeToDataType(const types::ExtGandivaType& ext_type) {
+  switch (ext_type.type()) {
+    case types::DECIMAL:
       // TODO: error handling
       return arrow::decimal(ext_type.precision(), ext_type.scale());
     case gandiva::types::TIME32:
@@ -230,24 +277,37 @@ DataTypePtr ProtoTypeToDataType(const gandiva::types::ExtGandivaType& ext_type) 
       return ProtoTypeToTimestamp(ext_type);
     case gandiva::types::INTERVAL:
       return ProtoTypeToInterval(ext_type);
-    case gandiva::types::FIXED_SIZE_BINARY:
     case gandiva::types::LIST:
+      return ProtoTypeToList(ext_type);
+    case gandiva::types::FIXED_SIZE_BINARY:
     case gandiva::types::STRUCT:
     case gandiva::types::UNION:
     case gandiva::types::DICTIONARY:
     case gandiva::types::MAP:
       std::cerr << "Unhandled data type: " << ext_type.type() << "\n";
       return nullptr;
-
     default:
-      std::cerr << "Unknown data type: " << ext_type.type() << "\n";
+      return SimpleProtoTypeToDataType(ext_type.type());
+  }
+}
+
+DataTypePtr ProtoTypeToDataType(const types::Field& f) {
+  const types::ExtGandivaType& ext_type = f.type();
+  if (ext_type.type() == types::LIST) {
+      if (f.children().size() > 0 && f.children()[0].type().type() != types::LIST) {
+        DataTypePtr childType = ProtoTypeToDataType(f.children()[0].type());
+        return arrow::list(childType);
+      }
+      std::cerr << "Unhandled list data type: " << ext_type.type() << "\n";
       return nullptr;
+  } else {
+    return ProtoTypeToDataType(ext_type);
   }
 }
 
 FieldPtr ProtoTypeToField(const gandiva::types::Field& f) {
   const std::string& name = f.name();
-  DataTypePtr type = ProtoTypeToDataType(f.type());
+  DataTypePtr type = ProtoTypeToDataType(f);
   bool nullable = true;
   if (f.has_nullable()) {
     nullable = f.nullable();
@@ -281,7 +341,7 @@ NodePtr ProtoTypeToFnNode(const gandiva::types::FunctionNode& node) {
 
     children.push_back(n);
   }
-
+  
   DataTypePtr return_type = ProtoTypeToDataType(node.returntype());
   if (return_type == nullptr) {
     std::cerr << "Unknown return type for function: " << name << "\n";
@@ -564,7 +624,6 @@ Status make_record_batch_with_buf_addrs(SchemaPtr schema, int num_rows,
     auto validity = std::shared_ptr<arrow::Buffer>(
         new arrow::Buffer(reinterpret_cast<uint8_t*>(validity_addr), validity_size));
     buffers.push_back(validity);
-
     if (buf_idx >= in_bufs_len) {
       return Status::Invalid("insufficient number of in_buf_addrs");
     }
@@ -587,8 +646,61 @@ Status make_record_batch_with_buf_addrs(SchemaPtr schema, int num_rows,
       buffers.push_back(offsets);
     }
 
-    auto array_data = arrow::ArrayData::Make(field->type(), num_rows, std::move(buffers));
+
+
+
+auto type = field->type();
+auto type_id = type->id();
+    if (type_id == arrow::Type::LIST) {
+
+            if (buf_idx >= in_bufs_len) {
+        return Status::Invalid("insufficient number of in_buf_addrs");
+      }
+
+      // add offsets buffer for variable-len fields.
+      jlong offsets_addr = in_buf_addrs[buf_idx++];
+      jlong offsets_size = in_buf_sizes[sz_idx++];
+      auto offsets = std::shared_ptr<arrow::Buffer>(
+          new arrow::Buffer(reinterpret_cast<uint8_t*>(offsets_addr), offsets_size));
+      buffers.push_back(offsets);
+    if (arrow::is_binary_like(type->field(0)->type()->id())) {
+      // child offsets length is internal data length + 1
+      // offsets element is int32
+      // so here i just allocate extra 32 bit for extra 1 length
+      jlong offsets_addr = in_buf_addrs[buf_idx++];
+      jlong offsets_size = in_buf_sizes[sz_idx++];
+
+      auto child_offsets_buffer = std::shared_ptr<arrow::Buffer>(  new arrow::Buffer(reinterpret_cast<uint8_t*>(offsets_addr), offsets_size));
+    
+      buffers.push_back(std::move(child_offsets_buffer));
+    }
+  }
+
+  if (type->id() == arrow::Type::LIST) {
+    jlong offsets_addr = in_buf_addrs[buf_idx++];
+    jlong offsets_size = in_buf_sizes[sz_idx++];
+    auto data_buffer = std::shared_ptr<arrow::Buffer>(  new arrow::Buffer(reinterpret_cast<uint8_t*>(offsets_addr), offsets_size));
+    auto internal_type = type->field(0)->type();
+    std::shared_ptr<arrow::ArrayData> child_data;
+    if (arrow::is_primitive(internal_type->id())) {
+      child_data = arrow::ArrayData::Make(internal_type, 0,
+                                          {std::move(buffers[2]), std::move(data_buffer)});
+    }
+    if (arrow::is_binary_like(internal_type->id())) {
+      //LR TODO need this for strings I think.
+      //std::cout << "LR New ArrayData List NYI 2" << std::endl;
+      //child_data = arrow::ArrayData::Make(
+      //    internal_type, 0,
+      //    {nullptr, std::move(data_buffer), std::move(child_data)}, 0);
+    }
+
+    auto array_data = arrow::ArrayData::Make(type, num_rows, {std::move(buffers[0]), std::move(buffers[1])}, {child_data});
     columns.push_back(array_data);
+
+  } else {
+    auto array_data = arrow::ArrayData::Make(type, num_rows, std::move(buffers));
+    columns.push_back(array_data);
+  }
   }
   *batch = arrow::RecordBatch::Make(schema, num_rows, columns);
   return Status::OK();
@@ -702,12 +814,15 @@ err_out:
 ///
 class JavaResizableBuffer : public arrow::ResizableBuffer {
  public:
-  JavaResizableBuffer(JNIEnv* env, jobject jexpander, int32_t vector_idx, uint8_t* buffer,
-                      int32_t len)
+  JavaResizableBuffer(JNIEnv* env, jobject jexpander, jmethodID jmethod, int32_t vector_idx, uint8_t* buffer,
+                      int32_t len, bool isListVec = false)
       : ResizableBuffer(buffer, len),
         env_(env),
         jexpander_(jexpander),
-        vector_idx_(vector_idx) {
+        vector_idx_(vector_idx),
+        method_(jmethod),
+        isList(isListVec)
+        {
     size_ = 0;
   }
 
@@ -715,27 +830,44 @@ class JavaResizableBuffer : public arrow::ResizableBuffer {
 
   Status Reserve(const int64_t new_capacity) override;
 
- private:
+ public:
   JNIEnv* env_;
   jobject jexpander_;
+  jmethodID method_;
   int32_t vector_idx_;
+  bool isList;
 };
 
 Status JavaResizableBuffer::Reserve(const int64_t new_capacity) {
   // callback into java to expand the buffer
-  jobject ret = env_->CallObjectMethod(jexpander_, vector_expander_method_, vector_idx_,
+  jobject ret = env_->CallObjectMethod(jexpander_, method_, vector_idx_,
                                        new_capacity);
   if (env_->ExceptionCheck()) {
     env_->ExceptionDescribe();
     env_->ExceptionClear();
-    return Status::OutOfMemory("buffer expand failed in java");
+    std::cout << "Buffer expand failed. New capacity is " << new_capacity  <<
+      " vector id " << vector_idx_ << " expander method " << method_ <<
+      " jexpander_ " << jexpander_ << std::endl;
+    return Status::OutOfMemory("buffer expand failed in java.");
   }
 
-  jlong ret_address = env_->GetLongField(ret, vector_expander_ret_address_);
-  jlong ret_capacity = env_->GetLongField(ret, vector_expander_ret_capacity_);
 
-  data_ = reinterpret_cast<uint8_t*>(ret_address);
-  capacity_ = ret_capacity;
+  if (isList) {
+    jlong ret_address = env_->GetLongField(ret, list_expander_ret_address_);
+    jlong ret_capacity = env_->GetLongField(ret, list_expander_ret_capacity_);
+    jlong valid_address = env_->GetLongField(ret, list_expander_valid_address_);
+
+    data_ = reinterpret_cast<uint8_t*>(ret_address);
+    capacity_ = ret_capacity;
+    validityBuffer = reinterpret_cast<uint8_t*>(valid_address);
+  } else {
+    jlong ret_address = env_->GetLongField(ret, vector_expander_ret_address_);
+    jlong ret_capacity = env_->GetLongField(ret, vector_expander_ret_capacity_);
+
+    data_ = reinterpret_cast<uint8_t*>(ret_address);
+    capacity_ = ret_capacity;
+  }
+
   return Status::OK();
 }
 
@@ -764,7 +896,7 @@ Status JavaResizableBuffer::Resize(const int64_t new_size, bool shrink_to_fit) {
 
 JNIEXPORT void JNICALL
 Java_org_apache_arrow_gandiva_evaluator_JniWrapper_evaluateProjector(
-    JNIEnv* env, jobject object, jobject jexpander, jlong module_id, jint num_rows,
+    JNIEnv* env, jobject object, jobject jexpander, jobject jListExpander, jlong module_id, jint num_rows,
     jlongArray buf_addrs, jlongArray buf_sizes, jint sel_vec_type, jint sel_vec_rows,
     jlong sel_vec_addr, jlong sel_vec_size, jlongArray out_buf_addrs,
     jlongArray out_buf_sizes) {
@@ -803,7 +935,6 @@ Java_org_apache_arrow_gandiva_evaluator_JniWrapper_evaluateProjector(
     if (!status.ok()) {
       break;
     }
-
     std::shared_ptr<gandiva::SelectionVector> selection_vector;
     auto selection_buffer = std::make_shared<arrow::Buffer>(
         reinterpret_cast<uint8_t*>(sel_vec_addr), sel_vec_size);
@@ -830,6 +961,7 @@ Java_org_apache_arrow_gandiva_evaluator_JniWrapper_evaluateProjector(
       break;
     }
 
+    std::shared_ptr<JavaResizableBuffer> outBufJava = nullptr;
     auto ret_types = holder->rettypes();
     ArrayDataVector output;
     int buf_idx = 0;
@@ -861,21 +993,71 @@ Java_org_apache_arrow_gandiva_evaluator_JniWrapper_evaluateProjector(
               "null");
           break;
         }
-        buffers.push_back(std::make_shared<JavaResizableBuffer>(
-            env, jexpander, output_vector_idx, value_buf, data_sz));
+
+      buffers.push_back(std::make_shared<JavaResizableBuffer>(
+            env, jexpander, vector_expander_method_, output_vector_idx, value_buf, data_sz));
+      } else if (field->type()->id() == arrow::Type::LIST) {
+          buffers.push_back(std::make_shared<JavaResizableBuffer>(
+            env, jexpander, vector_expander_method_, output_vector_idx, value_buf, data_sz));
       } else {
         buffers.push_back(std::make_shared<arrow::MutableBuffer>(value_buf, data_sz));
       }
+      
+      
+      if (field->type()->id() == arrow::Type::LIST) {
 
+        std::vector<std::shared_ptr<arrow::Buffer>> child_buffers;
+
+        if (jListExpander == nullptr) {
+          status = Status::Invalid(
+              "expression has variable len output columns, but the jListExpander object is "
+              "null");
+          break;
+        }
+        
+        data_sz = out_sizes[sz_idx++];
+        CHECK_OUT_BUFFER_IDX_AND_BREAK(buf_idx, out_bufs_len);
+        uint8_t* child_offset_buf = reinterpret_cast<uint8_t*>(out_bufs[buf_idx++]);
+        child_buffers.push_back(std::make_shared<JavaResizableBuffer>(
+            env, jListExpander, listvector_expander_method_, output_vector_idx, child_offset_buf, data_sz));
+
+        data_sz = out_sizes[sz_idx++];
+        CHECK_OUT_BUFFER_IDX_AND_BREAK(buf_idx, out_bufs_len);
+        uint8_t* child_data_buf = reinterpret_cast<uint8_t*>(out_bufs[buf_idx++]);
+        
+        outBufJava = std::make_shared<JavaResizableBuffer>(
+            env, jListExpander, listvector_expander_method_, output_vector_idx, child_data_buf, data_sz, true);
+        outBufJava->offsetBuffer = reinterpret_cast<uint8_t*>(out_bufs[1]);
+        outBufJava->offsetCapacity = out_sizes[1];
+        outBufJava->validityBuffer = reinterpret_cast<uint8_t*>(out_bufs[2]);
+        child_buffers.push_back(outBufJava);
+
+        std::shared_ptr<arrow::DataType> dt2 = std::make_shared<arrow::Int32Type>();
+        if (field->type()->id() == arrow::Type::LIST && field->type()->num_fields() > 0) {
+          dt2 = field->type()->fields()[0]->type();
+        }
+        
+        auto array_data_child = arrow::ArrayData::Make(dt2, output_row_count, child_buffers);
+        std::vector<std::shared_ptr<arrow::ArrayData>> kids;
+        kids.push_back(array_data_child);
+        auto array_data = arrow::ArrayData::Make(field->type(), output_row_count, buffers, kids);
+        array_data->child_data = std::move(kids);
+        output.push_back(array_data);
+        ++output_vector_idx;
+      } else {  
       auto array_data = arrow::ArrayData::Make(field->type(), output_row_count, buffers);
       output.push_back(array_data);
       ++output_vector_idx;
+      }
+
     }
     if (!status.ok()) {
       break;
     }
+
     status = holder->projector()->Evaluate(*in_batch, selection_vector.get(), output);
   } while (0);
+
 
   env->ReleaseLongArrayElements(buf_addrs, in_buf_addrs, JNI_ABORT);
   env->ReleaseLongArrayElements(buf_sizes, in_buf_sizes, JNI_ABORT);
@@ -961,7 +1143,7 @@ JNIEXPORT jlong JNICALL Java_org_apache_arrow_gandiva_evaluator_JniWrapper_build
   // good to invoke the filter builder now
   status = Filter::Make(schema_ptr, condition_ptr, config, &filter);
   if (!status.ok()) {
-    ss << "Failed to make LLVM module due to " << status.message() << "\n";
+    ss << "Failed to make LLVM module [2] due to " << status.message() << "\n";
     releaseFilterInput(schema_arr, schema_bytes, condition_arr, condition_bytes, env);
     goto err_out;
   }

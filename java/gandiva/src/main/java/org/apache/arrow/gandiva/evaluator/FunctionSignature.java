@@ -25,13 +25,18 @@ import org.apache.arrow.vector.types.pojo.ArrowType;
 public class FunctionSignature {
   private final String name;
   private final ArrowType returnType;
-  private final List<ArrowType> paramTypes;
+  private final ArrowType returnListType;
+  private final List<List<ArrowType>> paramTypes;
 
   public ArrowType getReturnType() {
     return returnType;
   }
 
-  public List<ArrowType> getParamTypes() {
+  public ArrowType getReturnListType() {
+    return returnListType;
+  }
+
+  public List<List<ArrowType>> getParamTypes() {
     return paramTypes;
   }
 
@@ -44,12 +49,34 @@ public class FunctionSignature {
    *
    * @param name - name of the function.
    * @param returnType - data type of return
+   * @param returnListType optional list type
+   * @param paramTypes - data type of input args.
+   */
+  public FunctionSignature(String name, ArrowType returnType, ArrowType returnListType, 
+      List<List<ArrowType>> paramTypes) {
+    this.name = name;
+    this.returnType = returnType;
+    this.returnListType = returnListType;
+    this.paramTypes = paramTypes;
+  }
+
+  /**
+   * Ctor.
+   * @param name - name of the function.
+   * @param returnType - data type of return
    * @param paramTypes - data type of input args.
    */
   public FunctionSignature(String name, ArrowType returnType, List<ArrowType> paramTypes) {
     this.name = name;
     this.returnType = returnType;
-    this.paramTypes = paramTypes;
+    this.returnListType = ArrowType.Null.INSTANCE;
+    this.paramTypes = new ArrayList<List<ArrowType>>();
+    for (ArrowType paramType : paramTypes) {
+      List<ArrowType> paramArrowList = new ArrayList<ArrowType>();
+      paramArrowList.add(paramType);
+      this.paramTypes.add(paramArrowList);
+    }
+    
   }
 
   /**
@@ -73,7 +100,7 @@ public class FunctionSignature {
 
   @Override
   public int hashCode() {
-    return Objects.hashCode(this.name.toLowerCase(), this.returnType, this.paramTypes);
+    return Objects.hashCode(this.name.toLowerCase(), this.returnType, this.returnListType, this.paramTypes);
   }
 
   @Override

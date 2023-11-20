@@ -104,11 +104,13 @@ class GANDIVA_EXPORT LLVMGenerator {
             llvm::BasicBlock* entry_block, llvm::Value* arg_addrs,
             llvm::Value* arg_local_bitmaps, llvm::Value* arg_holder_ptrs,
             std::vector<llvm::Value*> slice_offsets, llvm::Value* arg_context_ptr,
-            llvm::Value* loop_var);
+            llvm::Value* loop_var, llvm::Value* validity_index);
 
     void Visit(const VectorReadValidityDex& dex) override;
     void Visit(const VectorReadFixedLenValueDex& dex) override;
+    void Visit(const VectorReadFixedLenValueListDex& dex) override;
     void Visit(const VectorReadVarLenValueDex& dex) override;
+    void Visit(const VectorReadVarLenValueListDex& dex) override;
     void Visit(const LocalBitMapValidityDex& dex) override;
     void Visit(const TrueDex& dex) override;
     void Visit(const FalseDex& dex) override;
@@ -133,7 +135,12 @@ class GANDIVA_EXPORT LLVMGenerator {
     bool has_arena_allocs() { return has_arena_allocs_; }
 
    private:
-    enum BufferType { kBufferTypeValidity = 0, kBufferTypeData, kBufferTypeOffsets };
+    enum BufferType {
+      kBufferTypeValidity = 0,
+      kBufferTypeData,
+      kBufferTypeOffsets,
+      kBufferTypeChildOffsets
+    };
 
     llvm::IRBuilder<>* ir_builder() { return generator_->ir_builder(); }
     llvm::Module* module() { return generator_->module(); }
@@ -181,6 +188,7 @@ class GANDIVA_EXPORT LLVMGenerator {
     std::vector<llvm::Value*> slice_offsets_;
     llvm::Value* arg_context_ptr_;
     llvm::Value* loop_var_;
+    llvm::Value* validity_index_var_;
     bool has_arena_allocs_;
   };
 
@@ -200,6 +208,10 @@ class GANDIVA_EXPORT LLVMGenerator {
 
   /// Generate code to load the vector at specified index and cast it as offsets array.
   llvm::Value* GetOffsetsReference(llvm::Value* arg_addrs, int idx, FieldPtr field);
+
+  /// Generate code to load the vector at specified index and cast it as child offsets
+  /// array.
+  llvm::Value* GetChildOffsetsReference(llvm::Value* arg_addrs, int idx, FieldPtr field);
 
   /// Generate code to load the vector at specified index and cast it as buffer pointer.
   llvm::Value* GetDataBufferPtrReference(llvm::Value* arg_addrs, int idx, FieldPtr field);

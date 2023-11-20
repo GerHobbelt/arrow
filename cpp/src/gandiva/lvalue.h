@@ -46,9 +46,36 @@ class GANDIVA_EXPORT LValue {
     if (length_ != NULLPTR) {
       params->push_back(length_);
     }
+    if (validity_ != NULLPTR) {
+      params->push_back(validity_);
+    }
   }
 
- private:
+  virtual std::string to_string() {
+    std::string s = "Base LValue";
+    
+    std::string str1 = "data:";
+    if (data_) {
+      llvm::raw_string_ostream output1(str1);
+      data_->print(output1);
+    }
+
+    std::string str2 = "length:";
+    if (length_) {
+      llvm::raw_string_ostream output2(str2);
+      length_->print(output2);
+    }
+
+    std::string str3 = "validity:";
+    if (validity_) {
+      llvm::raw_string_ostream output3(str3);
+      validity_->print(output3);
+    }
+
+    return s + "\n" + str1 + "\n" + str2 + "\n" + str3;
+  }
+
+ protected:
   llvm::Value* data_;
   llvm::Value* length_;
   llvm::Value* validity_;
@@ -72,6 +99,50 @@ class GANDIVA_EXPORT DecimalLValue : public LValue {
  private:
   llvm::Value* precision_;
   llvm::Value* scale_;
+};
+
+class GANDIVA_EXPORT ListLValue : public LValue {
+ public:
+  ListLValue(llvm::Value* data, llvm::Value* child_offsets, llvm::Value* offsets_length,
+             llvm::Value* validity = NULLPTR)
+      : LValue(data, NULLPTR, validity),
+        child_offsets_(child_offsets),
+        offsets_length_(offsets_length) {
+        }
+
+  llvm::Value* child_offsets() { return child_offsets_; }
+
+  llvm::Value* offsets_length() { return offsets_length_; }
+
+  void AppendFunctionParams(std::vector<llvm::Value*>* params) override {
+    LValue::AppendFunctionParams(params);
+    params->push_back(child_offsets_);
+    params->push_back(offsets_length_);
+    params->push_back(validity_);
+  }
+
+  virtual std::string to_string() override {
+    std::string s = "List LValue";
+    s += " " + LValue::to_string();
+
+    std::string str1 = "child_offsets_:";
+    if (child_offsets_) {
+      llvm::raw_string_ostream output1(str1);
+      child_offsets_->print(output1);
+    }
+
+    std::string str2 = "offsets_length_:";
+    if (offsets_length_) {
+      llvm::raw_string_ostream output2(str2);
+      offsets_length_->print(output2);
+    }
+
+    return s + "\n" + str1 + "\n" + str2;
+  }
+
+ private:
+  llvm::Value* child_offsets_;
+  llvm::Value* offsets_length_;
 };
 
 }  // namespace gandiva

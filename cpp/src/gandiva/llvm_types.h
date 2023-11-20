@@ -46,6 +46,8 @@ class GANDIVA_EXPORT LLVMTypes {
 
   llvm::Type* i128_type() { return llvm::Type::getInt128Ty(context_); }
 
+  llvm::VectorType* list_type() { return llvm::ScalableVectorType::get(i8_type(), (unsigned int)0); }
+
   llvm::StructType* i128_split_type() {
     // struct with high/low bits (see decimal_ops.cc:DecimalSplit)
     return llvm::StructType::get(context_, {i64_type(), i64_type()}, false);
@@ -57,6 +59,8 @@ class GANDIVA_EXPORT LLVMTypes {
 
   llvm::PointerType* ptr_type(llvm::Type* type) { return type->getPointerTo(); }
 
+  llvm::PointerType* i1_ptr_type() { return ptr_type(i1_type()); }
+
   llvm::PointerType* i8_ptr_type() { return ptr_type(i8_type()); }
 
   llvm::PointerType* i32_ptr_type() { return ptr_type(i32_type()); }
@@ -64,6 +68,10 @@ class GANDIVA_EXPORT LLVMTypes {
   llvm::PointerType* i64_ptr_type() { return ptr_type(i64_type()); }
 
   llvm::PointerType* i128_ptr_type() { return ptr_type(i128_type()); }
+
+  llvm::PointerType* float_ptr_type() { return ptr_type(float_type()); }
+
+  llvm::PointerType* double_ptr_type() { return ptr_type(double_type()); }
 
   template <typename ctype, size_t N = (sizeof(ctype) * CHAR_BIT)>
   llvm::Constant* int_constant(ctype val) {
@@ -87,6 +95,10 @@ class GANDIVA_EXPORT LLVMTypes {
     return llvm::ConstantFP::get(float_type(), val);
   }
 
+  llvm::LLVMContext* get_context() {
+    return &context_;
+  }
+
   llvm::Constant* double_constant(double val) {
     return llvm::ConstantFP::get(double_type(), val);
   }
@@ -104,6 +116,17 @@ class GANDIVA_EXPORT LLVMTypes {
 
   /// For a given data type, find the ir type used for the data vector slot.
   llvm::Type* DataVecType(const DataTypePtr& data_type) {
+    // support list type
+    // list type data is formed by base type buffer, wrapped with offsets buffer
+    // offsets buffer is to separate data into list
+    // not support nested list
+    if (data_type->id() == arrow::Type::LIST) {
+      //Nested lists aren't supported yet.
+      if (data_type->field(0)->type()->id() == arrow::Type::LIST) {
+        return NULL;
+      }
+      return IRType(data_type->field(0)->type()->id());
+    }
     return IRType(data_type->id());
   }
 

@@ -256,11 +256,13 @@ public class ArrowTypeHelper {
    * Converts an arrow type into a protobuf.
    *
    * @param arrowType Arrow type to be converted
+   * @param subType optional arrow type for list/complex types
+   * @param builder the builder to use
    * @return Protobuf representing the arrow type
    */
-  public static GandivaTypes.ExtGandivaType arrowTypeToProtobuf(ArrowType arrowType)
+  public static GandivaTypes.ExtGandivaType arrowTypeToProtobuf(ArrowType arrowType, ArrowType subType,
+      GandivaTypes.ExtGandivaType.Builder builder)
       throws GandivaException {
-    GandivaTypes.ExtGandivaType.Builder builder = GandivaTypes.ExtGandivaType.newBuilder();
 
     byte typeId = arrowType.getTypeID().getFlatbufID();
     switch (typeId) {
@@ -363,6 +365,31 @@ public class ArrowTypeHelper {
     return builder.build();
   }
 
+
+  /**
+   * Converts an arrow type into a protobuf.
+   *
+   * @param arrowType Arrow type to be converted
+   * @param f field optional for list/complex types
+   * @return Protobuf representing the arrow type
+   */
+  public static GandivaTypes.ExtGandivaType arrowTypeToProtobuf(ArrowType arrowType, ArrowType f)
+      throws GandivaException {
+    GandivaTypes.ExtGandivaType.Builder builder = GandivaTypes.ExtGandivaType.newBuilder();
+    return arrowTypeToProtobuf(arrowType, f, builder);
+  }
+
+  /**
+   * Converts an arrow type into a protobuf.
+   *
+   * @param arrowType Arrow type to be converted
+   * @return Protobuf representing the arrow type
+   */
+  public static GandivaTypes.ExtGandivaType arrowTypeToProtobuf(ArrowType arrowType)
+      throws GandivaException {
+    return arrowTypeToProtobuf(arrowType, null);
+  }
+
   /**
    * Converts an arrow field object to a protobuf.
    *
@@ -372,12 +399,21 @@ public class ArrowTypeHelper {
   public static GandivaTypes.Field arrowFieldToProtobuf(Field field) throws GandivaException {
     GandivaTypes.Field.Builder builder = GandivaTypes.Field.newBuilder();
     builder.setName(field.getName());
-    builder.setType(ArrowTypeHelper.arrowTypeToProtobuf(field.getType()));
     builder.setNullable(field.isNullable());
 
-    for (Field child : field.getChildren()) {
-      builder.addChildren(ArrowTypeHelper.arrowFieldToProtobuf(child));
+    ArrowType subType = null;
+    if (field.getChildren().size() > 0 && field.getChildren().get(0)
+        .getType().getTypeID().getFlatbufID() != Type.List) {
+      subType = field.getChildren().get(0).getType();
     }
+
+    builder.setType(ArrowTypeHelper.arrowTypeToProtobuf(field.getType(), subType));
+    for (Field child : field.getChildren()) {
+      if (child.getType() != ArrowType.Null.INSTANCE) {
+        builder.addChildren(ArrowTypeHelper.arrowFieldToProtobuf(child));
+      }
+    }
+    
 
     return builder.build();
   }

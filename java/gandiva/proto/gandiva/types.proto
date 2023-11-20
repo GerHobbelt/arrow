@@ -85,6 +85,7 @@ message ExtGandivaType {
   optional TimeUnit timeUnit = 6;  // used by TIME32/TIME64
   optional string timeZone = 7; // used by TIMESTAMP
   optional IntervalType intervalType = 8; // used by INTERVAL
+  optional GandivaType listType = 9; //used by LIST
 }
 
 message Field {

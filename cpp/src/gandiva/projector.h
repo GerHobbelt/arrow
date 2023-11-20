@@ -124,13 +124,15 @@ class GANDIVA_EXPORT Projector {
 
   bool GetBuiltFromCache();
 
+  void Clear();
+  /// Allocate an ArrowData of length 'length'.
+  Status AllocArrayData(const DataTypePtr& type, int64_t num_records,
+                        arrow::MemoryPool* pool, ArrayDataPtr* array_data) const;
+
  private:
   Projector(std::unique_ptr<LLVMGenerator> llvm_generator, SchemaPtr schema,
             const FieldVector& output_fields, std::shared_ptr<Configuration>);
 
-  /// Allocate an ArrowData of length 'length'.
-  Status AllocArrayData(const DataTypePtr& type, int64_t num_records,
-                        arrow::MemoryPool* pool, ArrayDataPtr* array_data) const;
 
   /// Validate that the ArrayData has sufficient capacity to accommodate 'num_records'.
   Status ValidateArrayDataCapacity(const arrow::ArrayData& array_data,

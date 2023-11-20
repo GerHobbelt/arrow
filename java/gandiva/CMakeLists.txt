@@ -38,7 +38,7 @@ set(GANDIVA_PROTO_DIR ${CMAKE_CURRENT_SOURCE_DIR}/proto)
 get_filename_component(GANDIVA_PROTO_FILE_ABSOLUTE
                        ${GANDIVA_PROTO_DIR}/gandiva/types.proto ABSOLUTE)
 
-find_package(Protobuf REQUIRED)
+find_package(Protobuf CONFIG REQUIRED)
 add_custom_command(OUTPUT ${GANDIVA_PROTO_OUTPUT_FILES}
                    COMMAND protobuf::protoc --proto_path ${GANDIVA_PROTO_DIR} --cpp_out
                            ${GANDIVA_PROTO_OUTPUT_DIR} ${GANDIVA_PROTO_FILE_ABSOLUTE}

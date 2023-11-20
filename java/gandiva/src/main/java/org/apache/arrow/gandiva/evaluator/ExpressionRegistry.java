@@ -111,9 +111,17 @@ public class ExpressionRegistry {
 
         String functionName = protoFunctionSignature.getName();
         ArrowType returnType = getArrowType(protoFunctionSignature.getReturnType());
-        List<ArrowType> paramTypes = Lists.newArrayList();
+        ArrowType returnListType = getArrowTypeSimple(protoFunctionSignature.getReturnType().getListType());
+        List<List<ArrowType>> paramTypes = new ArrayList<List<ArrowType>>();
         for (ExtGandivaType type : protoFunctionSignature.getParamTypesList()) {
-          paramTypes.add(getArrowType(type));
+          ArrowType paramType = getArrowType(type);
+          ArrowType paramListType = getArrowTypeSimple(type.getListType());
+          List<ArrowType> paramArrowList = new ArrayList<ArrowType>();
+          paramArrowList.add(paramType);
+          if (paramType.getTypeID().getFlatbufID() == Type.List) {
+            paramArrowList.add(paramListType);
+          }
+          paramTypes.add(paramArrowList);
         }
         FunctionSignature functionSignature =
             new FunctionSignature(functionName, returnType, paramTypes);
@@ -125,8 +133,8 @@ public class ExpressionRegistry {
     return supportedTypes;
   }
 
-  private static ArrowType getArrowType(ExtGandivaType type) {
-    switch (type.getType().getNumber()) {
+  private static ArrowType getArrowTypeSimple(GandivaType type) {
+    switch (type.getNumber()) {
       case GandivaType.BOOL_VALUE:
         return ArrowType.Bool.INSTANCE;
       case GandivaType.UINT8_VALUE:
@@ -159,6 +167,24 @@ public class ExpressionRegistry {
         return new ArrowType.Date(DateUnit.DAY);
       case GandivaType.DATE64_VALUE:
         return new ArrowType.Date(DateUnit.MILLISECOND);
+      case GandivaType.NONE_VALUE:
+        return new ArrowType.Null();
+      case GandivaType.DECIMAL_VALUE:
+        return new ArrowType.Decimal(0, 0, 128);
+      case GandivaType.LIST_VALUE:
+        return new ArrowType.List();
+      case GandivaType.FIXED_SIZE_BINARY_VALUE:
+      case GandivaType.MAP_VALUE:
+      case GandivaType.DICTIONARY_VALUE:
+      case GandivaType.UNION_VALUE:
+      default:
+        assert false;
+    }
+    return null;
+  }
+
+  private static ArrowType getArrowType(ExtGandivaType type) {
+    switch (type.getType().getNumber()) {
       case GandivaType.TIMESTAMP_VALUE:
         return new ArrowType.Timestamp(mapArrowTimeUnit(type.getTimeUnit()), null);
       case GandivaType.TIME32_VALUE:
@@ -171,16 +197,9 @@ public class ExpressionRegistry {
         return new ArrowType.Decimal(0, 0, 128);
       case GandivaType.INTERVAL_VALUE:
         return new ArrowType.Interval(mapArrowIntervalUnit(type.getIntervalType()));
-      case GandivaType.FIXED_SIZE_BINARY_VALUE:
-      case GandivaType.MAP_VALUE:
-      case GandivaType.DICTIONARY_VALUE:
-      case GandivaType.LIST_VALUE:
-      case GandivaType.STRUCT_VALUE:
-      case GandivaType.UNION_VALUE:
       default:
-        assert false;
+        return getArrowTypeSimple(type.getType());
     }
-    return null;
   }
 
   private static TimeUnit mapArrowTimeUnit(GandivaTypes.TimeUnit timeUnit) {

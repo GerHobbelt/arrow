@@ -45,6 +45,7 @@ set_source_files_properties(${GANDIVA_PRECOMPILED_CC_PATH} PROPERTIES GENERATED 
 
 set(SRC_FILES
     annotator.cc
+    array_ops.cc
     bitmap_accumulator.cc
     cache.cc
     cast_time.cc
@@ -68,6 +69,7 @@ set(SRC_FILES
     function_ir_builder.cc
     function_registry.cc
     function_registry_arithmetic.cc
+    function_registry_array.cc
     function_registry_datetime.cc
     function_registry_hash.cc
     function_registry_math_ops.cc
@@ -244,6 +246,7 @@ endfunction()
 
 add_gandiva_test(internals-test
                  SOURCES
+                 array_ops_test.cc
                  bitmap_accumulator_test.cc
                  cache_test.cc
                  engine_llvm_test.cc

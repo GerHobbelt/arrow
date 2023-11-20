@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+
 add_gandiva_test(projector-test
                  SOURCES
                  binary_test.cc
@@ -28,6 +29,7 @@ add_gandiva_test(projector-test
                  huge_table_test.cc
                  if_expr_test.cc
                  in_expr_test.cc
+                 list_test.cc
                  literal_test.cc
                  null_validity_test.cc
                  projector_build_validation_test.cc

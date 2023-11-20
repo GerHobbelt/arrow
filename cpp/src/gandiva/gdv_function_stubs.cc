@@ -36,8 +36,6 @@
 #include "gandiva/random_generator_holder.h"
 #include "gandiva/to_date_holder.h"
 
-/// Stub functions that can be accessed from LLVM or the pre-compiled library.
-
 extern "C" {
 
 static char mask_array[256] = {
@@ -158,6 +156,96 @@ int32_t gdv_fn_populate_varlen_vector(int64_t context_ptr, int8_t* data_ptr,
   // update offsets buffer.
   offsets[slot] = offset;
   offsets[slot + 1] = offset + entry_len;
+  return 0;
+}
+
+/// Stub functions that can be accessed from LLVM or the pre-compiled library.
+#define POPULATE_NUMERIC_LIST_TYPE_VECTOR(TYPE, SCALE)                                \
+  int32_t gdv_fn_populate_list_##TYPE##_vector(int64_t context_ptr, int8_t* data_ptr, \
+                                               int32_t* offsets, int64_t slot,        \
+                                               TYPE* entry_buf, int32_t entry_len, int32_t** valid_ptr) {  \
+    auto buffer = reinterpret_cast<arrow::ResizableBuffer*>(data_ptr);                \
+    int32_t offset = static_cast<int32_t>(buffer->size());                            \
+    auto status = buffer->Resize(offset + entry_len * SCALE, false /*shrink*/);       \
+    if (!status.ok()) {                                                               \
+      gandiva::ExecutionContext* context =                                            \
+          reinterpret_cast<gandiva::ExecutionContext*>(context_ptr);                  \
+      context->set_error_msg(status.message().c_str());                               \
+      return -1;                                                                      \
+    }                                                                                \
+    memcpy(buffer->mutable_data() + offset, (char*)entry_buf, entry_len * SCALE);     \
+    int validbitIndex = offset / SCALE;   \
+    for (int i = 0; i < entry_len; i++) {        \
+      arrow::bit_util::SetBitTo(buffer->validityBuffer, validbitIndex + i, arrow::bit_util::GetBit(reinterpret_cast<uint8_t*>(valid_ptr), i));      \
+    }                   \
+    offsets = reinterpret_cast<int32_t*>(buffer->offsetBuffer);                     \
+    offsets[slot] = offset / SCALE;                                                 \
+    offsets[slot + 1] = offset / SCALE + entry_len;                                  \
+    return 0;                                                                     \
+  }\
+
+POPULATE_NUMERIC_LIST_TYPE_VECTOR(int32_t, 4)
+POPULATE_NUMERIC_LIST_TYPE_VECTOR(int64_t, 8)
+POPULATE_NUMERIC_LIST_TYPE_VECTOR(float, 4)
+POPULATE_NUMERIC_LIST_TYPE_VECTOR(double, 8)
+
+int32_t gdv_fn_populate_list_varlen_vector(int64_t context_ptr, int8_t* data_ptr,
+                                           int32_t* offsets, int32_t* child_offsets,
+                                           int64_t slot, const char* entry_buf,
+                                           int32_t* entry_child_offsets,
+                                           int32_t entry_offsets_len) {
+  // we should calculate varlen list type varlen offset
+  // copy from entry child offsets
+  // it should be noted that,
+  // buffer size unit is byte(8 bit),
+  // offset element unit is int32(32 bit)
+  auto child_offsets_buffer = reinterpret_cast<arrow::ResizableBuffer*>(child_offsets);
+  int32_t child_offsets_buffer_offset =
+      static_cast<int32_t>(child_offsets_buffer->size());
+
+  // data buffer elelment is char(8 bit)
+  auto data_buffer = reinterpret_cast<arrow::ResizableBuffer*>(data_ptr);
+  int32_t data_buffer_offset = static_cast<int32_t>(data_buffer->size());
+
+  // sets the size in the child offsets buffer
+  // offsets element is int32, we should resize buffer by extra offsets_len * 4
+  auto status = child_offsets_buffer->Resize(
+      child_offsets_buffer_offset + entry_offsets_len * 4, false /*shrink*/);
+  if (!status.ok()) {
+    gandiva::ExecutionContext* context =
+        reinterpret_cast<gandiva::ExecutionContext*>(context_ptr);
+
+    context->set_error_msg(status.message().c_str());
+    return -1;
+  }
+
+  // append the new child offsets entry to child offsets buffer
+  // offsets buffer last offset number indicating data length
+  // we should take this extra offset into consider
+  // so the initialize child_offsets_buffer length is 1(int32)
+  memcpy(child_offsets_buffer->mutable_data() + child_offsets_buffer_offset - 4,
+         (char*)entry_child_offsets, (entry_offsets_len + 1) * 4);
+
+  // compute data length
+  int32_t data_length =
+      *(entry_child_offsets + entry_offsets_len) - *(entry_child_offsets);
+
+  // sets the size in the child offsets buffer.
+  status = data_buffer->Resize(data_buffer_offset + data_length, false /*shrink*/);
+  if (!status.ok()) {
+    gandiva::ExecutionContext* context =
+        reinterpret_cast<gandiva::ExecutionContext*>(context_ptr);
+
+    context->set_error_msg(status.message().c_str());
+    return -1;
+  }
+
+  // append the new child offsets entry to child offsets buffer
+  memcpy(data_buffer->mutable_data() + data_buffer_offset, entry_buf, data_length);
+
+  // update offsets buffer.
+  offsets[slot] = child_offsets_buffer_offset / 4 - 1;
+  offsets[slot + 1] = child_offsets_buffer_offset / 4 - 1 + entry_offsets_len;
   return 0;
 }
 
@@ -838,6 +926,8 @@ const char* gdv_mask_show_last_n_utf8_int32(int64_t context, const char* data,
   int32_t n_to_mask = num_of_chars - n_to_show;
   return gdv_mask_first_n_utf8_int32(context, data, data_len, n_to_mask, out_len);
 }
+
+#undef POPULATE_NUMERIC_LIST_TYPE_VECTOR
 }
 
 namespace gandiva {
@@ -1174,6 +1264,34 @@ arrow::Status ExportedStubFunctions::AddMappings(Engine* engine) const {
                                   types->i32_type() /*return_type*/, args,
                                   reinterpret_cast<void*>(gdv_fn_cast_intervalyear_utf8));
 
+  engine->AddGlobalMappingForFunc("gdv_fn_in_expr_lookup_utf8",
+                                  types->i1_type() /*return_type*/, args,
+                                  reinterpret_cast<void*>(gdv_fn_in_expr_lookup_utf8));
+
+#define ADD_MAPPING_FOR_NUMERIC_LIST_TYPE_POPULATE_FUNCTION(LLVM_TYPE, DATA_TYPE)      \
+  args = {types->i64_type(), types->i8_ptr_type(),          types->i32_ptr_type(),     \
+          types->i64_type(), types->LLVM_TYPE##_ptr_type(), types->i32_type(), types->i32_ptr_type()};        \
+  engine->AddGlobalMappingForFunc(                                                     \
+      "gdv_fn_populate_list_" #DATA_TYPE "_vector", types->i32_type() /*return_type*/, \
+      args, reinterpret_cast<void*>(gdv_fn_populate_list_##DATA_TYPE##_vector));
+
+  ADD_MAPPING_FOR_NUMERIC_LIST_TYPE_POPULATE_FUNCTION(i32, int32_t)
+  ADD_MAPPING_FOR_NUMERIC_LIST_TYPE_POPULATE_FUNCTION(i64, int64_t)
+  ADD_MAPPING_FOR_NUMERIC_LIST_TYPE_POPULATE_FUNCTION(float, float)
+  ADD_MAPPING_FOR_NUMERIC_LIST_TYPE_POPULATE_FUNCTION(double, double)
+
+  // gdv_fn_populate_varlen_vector
+  args = {types->i64_type(),      // int64_t execution_context
+          types->i8_ptr_type(),   // int8_t* data ptr
+          types->i32_ptr_type(),  // int32_t* offsets ptr
+          types->i64_type(),      // int64_t slot
+          types->i8_ptr_type(),   // const char* entry_buf
+          types->i32_type()};     // int32_t entry__len
+
+  engine->AddGlobalMappingForFunc("gdv_fn_populate_varlen_vector",
+                                  types->i32_type() /*return_type*/, args,
+                                  reinterpret_cast<void*>(gdv_fn_populate_varlen_vector));
+
   // gdv_fn_cast_intervalyear_utf8_int32
   args = {
       types->i64_type(),                 // context
@@ -1190,6 +1308,26 @@ arrow::Status ExportedStubFunctions::AddMappings(Engine* engine) const {
       "gdv_fn_cast_intervalyear_utf8_int32", types->i32_type() /*return_type*/, args,
       reinterpret_cast<void*>(gdv_fn_cast_intervalyear_utf8_int32));
 
+  // gdv_fn_populate_list_varlen_vector
+  args = {types->i64_type(),      // int64_t execution_context
+          types->i8_ptr_type(),   // int8_t* data ptr
+          types->i32_ptr_type(),  // int32_t* offsets ptr
+          types->i32_ptr_type(),  // int32_t* child offsets ptr
+          types->i64_type(),      // int64_t slot
+          types->i8_ptr_type(),   // const char* entry_buf
+          types->i32_ptr_type(),  // int32_t* entry child offsets ptr
+          types->i32_type(),     // int32_t entry child offsets length
+          types->i32_ptr_type()  // int32_t* entry child valid ptr
+  };
+
+  engine->AddGlobalMappingForFunc(
+      "gdv_fn_populate_list_varlen_vector", types->i32_type() /*return_type*/, args,
+      reinterpret_cast<void*>(gdv_fn_populate_list_varlen_vector));
+
+  // gdv_fn_random
+  args = {types->i64_type()};
+  engine->AddGlobalMappingForFunc("gdv_fn_random", types->double_type(), args,
+                                  reinterpret_cast<void*>(gdv_fn_random));
   // to_utc_timezone_timestamp
   args = {
       types->i64_type(),     // context
@@ -1290,4 +1428,6 @@ arrow::Status ExportedStubFunctions::AddMappings(Engine* engine) const {
                                   reinterpret_cast<void*>(mask_utf8));
   return arrow::Status::OK();
 }
+
+#undef ADD_MAPPING_FOR_NUMERIC_LIST_TYPE_POPULATE_FUNCTION
 }  // namespace gandiva

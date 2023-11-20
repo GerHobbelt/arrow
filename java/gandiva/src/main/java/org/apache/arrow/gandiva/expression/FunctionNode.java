@@ -20,24 +20,48 @@ import java.util.List;
 import org.apache.arrow.gandiva.exceptions.GandivaException;
 import org.apache.arrow.gandiva.ipc.GandivaTypes;
 import org.apache.arrow.vector.types.pojo.ArrowType;
+import org.apache.arrow.vector.types.pojo.Field;
+
 
 /** Node representing an arbitrary function in an expression. */
 class FunctionNode implements TreeNode {
   private final String function;
   private final List<TreeNode> children;
   private final ArrowType retType;
+  private final ArrowType retListType;
 
-  FunctionNode(String function, List<TreeNode> children, ArrowType retType) {
+  FunctionNode(String function, List<TreeNode> children, Field inField) {
     this.function = function;
     this.children = children;
-    this.retType = retType;
+    this.retType = inField.getType();
+    if (inField.getChildren().size() > 0 && inField.getChildren().get(0)
+        .getType().getTypeID().getFlatbufID() != Type.List) {
+      this.retListType = inField.getChildren().get(0).getType();
+    } else {
+      this.retListType = null;
+    }
+    
+  }
+
+  FunctionNode(String function, List<TreeNode> children, ArrowType inType) {
+    this.function = function;
+    this.children = children;
+    this.retType = inType;
+    this.retListType = null;
+  }
+  
+  FunctionNode(String function, List<TreeNode> children, ArrowType inType, ArrowType listType) {
+    this.function = function;
+    this.children = children;
+    this.retType = inType;
+    this.retListType = listType;
   }
 
   @Override
   public GandivaTypes.TreeNode toProtobuf() throws GandivaException {
     GandivaTypes.FunctionNode.Builder fnNode = GandivaTypes.FunctionNode.newBuilder();
     fnNode.setFunctionName(function);
-    fnNode.setReturnType(ArrowTypeHelper.arrowTypeToProtobuf(retType));
+    fnNode.setReturnType(ArrowTypeHelper.arrowTypeToProtobuf(retType, retListType));
 
     for (TreeNode arg : children) {
       fnNode.addInArgs(arg.toProtobuf());
