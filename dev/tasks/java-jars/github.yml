@@ -39,7 +39,7 @@ jobs:
             archery_arch: "amd64"
             archery_arch_alias: "x86_64"
             archery_arch_short: "amd64"
-          - runs_on: ["self-hosted", "Linux", "arm64"]
+          - runs_on: ["buildjet-8vcpu-ubuntu-2204-arm"]
             arch: "aarch_64"
             archery_arch: "arm64v8"
             archery_arch_alias: "aarch64"
@@ -53,6 +53,14 @@ jobs:
             df -h
             sudo rm -rf /opt/hostedtoolcache/CodeQL || :
             df -h
+      - name: Set Swap Space
+        continue-on-error: true
+        shell: bash
+        run: |
+            sudo fallocate -l 16G /swapfile
+            sudo chmod 600 /swapfile
+            sudo mkswap /swapfile
+            sudo swapon /swapfile
       - name: Build C++ libraries
         env:
         {{ macros.github_set_sccache_envvars()|indent(8) }}
