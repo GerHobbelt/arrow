@@ -23,6 +23,6 @@ namespace gandiva {
 TEST(ExportedFuncsRegistry, RegistrationOnlyOnce) {
   gandiva::RegisterExportedFuncs();
   auto const& registered_list = ExportedFuncsRegistry::Registered();
-  EXPECT_EQ(registered_list.size(), 6);
+  EXPECT_EQ(registered_list.size(), 7);
 }
 }  // namespace gandiva

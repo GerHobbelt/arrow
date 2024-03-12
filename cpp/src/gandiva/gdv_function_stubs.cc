@@ -1264,10 +1264,6 @@ arrow::Status ExportedStubFunctions::AddMappings(Engine* engine) const {
                                   types->i32_type() /*return_type*/, args,
                                   reinterpret_cast<void*>(gdv_fn_cast_intervalyear_utf8));
 
-  engine->AddGlobalMappingForFunc("gdv_fn_in_expr_lookup_utf8",
-                                  types->i1_type() /*return_type*/, args,
-                                  reinterpret_cast<void*>(gdv_fn_in_expr_lookup_utf8));
-
 #define ADD_MAPPING_FOR_NUMERIC_LIST_TYPE_POPULATE_FUNCTION(LLVM_TYPE, DATA_TYPE)      \
   args = {types->i64_type(), types->i8_ptr_type(),          types->i32_ptr_type(),     \
           types->i64_type(), types->LLVM_TYPE##_ptr_type(), types->i32_type(), types->i32_ptr_type()};        \
@@ -1279,18 +1275,6 @@ arrow::Status ExportedStubFunctions::AddMappings(Engine* engine) const {
   ADD_MAPPING_FOR_NUMERIC_LIST_TYPE_POPULATE_FUNCTION(i64, int64_t)
   ADD_MAPPING_FOR_NUMERIC_LIST_TYPE_POPULATE_FUNCTION(float, float)
   ADD_MAPPING_FOR_NUMERIC_LIST_TYPE_POPULATE_FUNCTION(double, double)
-
-  // gdv_fn_populate_varlen_vector
-  args = {types->i64_type(),      // int64_t execution_context
-          types->i8_ptr_type(),   // int8_t* data ptr
-          types->i32_ptr_type(),  // int32_t* offsets ptr
-          types->i64_type(),      // int64_t slot
-          types->i8_ptr_type(),   // const char* entry_buf
-          types->i32_type()};     // int32_t entry__len
-
-  engine->AddGlobalMappingForFunc("gdv_fn_populate_varlen_vector",
-                                  types->i32_type() /*return_type*/, args,
-                                  reinterpret_cast<void*>(gdv_fn_populate_varlen_vector));
 
   // gdv_fn_cast_intervalyear_utf8_int32
   args = {
@@ -1324,10 +1308,6 @@ arrow::Status ExportedStubFunctions::AddMappings(Engine* engine) const {
       "gdv_fn_populate_list_varlen_vector", types->i32_type() /*return_type*/, args,
       reinterpret_cast<void*>(gdv_fn_populate_list_varlen_vector));
 
-  // gdv_fn_random
-  args = {types->i64_type()};
-  engine->AddGlobalMappingForFunc("gdv_fn_random", types->double_type(), args,
-                                  reinterpret_cast<void*>(gdv_fn_random));
   // to_utc_timezone_timestamp
   args = {
       types->i64_type(),     // context
