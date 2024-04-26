@@ -293,8 +293,8 @@ DataTypePtr ProtoTypeToDataType(const types::ExtGandivaType& ext_type) {
 
 DataTypePtr ProtoTypeToDataType(const types::Field& f) {
   const types::ExtGandivaType& ext_type = f.type();
-  if (ext_type.type() == types::LIST) {
-      if (f.children().size() > 0 && f.children()[0].type().type() != types::LIST) {
+  if (ext_type.type() == gandiva::types::LIST) {
+      if (f.children().size() > 0 && f.children()[0].type().type() != gandiva::types::LIST) {
         DataTypePtr childType = ProtoTypeToDataType(f.children()[0].type());
         return arrow::list(childType);
       }
