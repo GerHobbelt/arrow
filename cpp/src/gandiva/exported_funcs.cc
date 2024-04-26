@@ -20,6 +20,7 @@
 
 namespace gandiva {
 void RegisterExportedFuncs() {
+  REGISTER_EXPORTED_FUNCS(ExportedArrayFunctions);
   REGISTER_EXPORTED_FUNCS(ExportedStubFunctions);
   REGISTER_EXPORTED_FUNCS(ExportedContextFunctions);
   REGISTER_EXPORTED_FUNCS(ExportedTimeFunctions);
