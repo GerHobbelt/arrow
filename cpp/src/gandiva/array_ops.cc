@@ -211,7 +211,7 @@ double* array_float64_remove(int64_t context_ptr, const double* entry_buf,
 }
 
 namespace gandiva {
-void ExportedArrayFunctions::AddMappings(Engine* engine) const {
+arrow::Status ExportedArrayFunctions::AddMappings(Engine* engine) const {
   std::vector<llvm::Type*> args;
   auto types = engine->types();
 
@@ -353,5 +353,6 @@ void ExportedArrayFunctions::AddMappings(Engine* engine) const {
   engine->AddGlobalMappingForFunc("array_float64_remove",
                                   types->double_ptr_type(), args,
                                   reinterpret_cast<void*>(array_float64_remove));
+  return arrow::Status::OK();
 }
 }  // namespace gandiva

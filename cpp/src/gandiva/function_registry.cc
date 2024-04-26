@@ -66,43 +66,6 @@ FunctionRegistry::iterator FunctionRegistry::back() const {
   return &(pc_registry_.back());
 }
 
-
-std::vector<NativeFunction> FunctionRegistry::pc_registry_;
-
-SignatureMap FunctionRegistry::pc_registry_map_ = InitPCMap();
-
-SignatureMap FunctionRegistry::InitPCMap() {
-  SignatureMap map;
-
-  auto v1 = GetArithmeticFunctionRegistry();
-  pc_registry_.insert(std::end(pc_registry_), v1.begin(), v1.end());
-  auto v2 = GetDateTimeFunctionRegistry();
-  pc_registry_.insert(std::end(pc_registry_), v2.begin(), v2.end());
-
-  auto v3 = GetHashFunctionRegistry();
-  pc_registry_.insert(std::end(pc_registry_), v3.begin(), v3.end());
-
-  auto v4 = GetMathOpsFunctionRegistry();
-  pc_registry_.insert(std::end(pc_registry_), v4.begin(), v4.end());
-
-  auto v5 = GetStringFunctionRegistry();
-  pc_registry_.insert(std::end(pc_registry_), v5.begin(), v5.end());
-
-  auto v6 = GetDateTimeArithmeticFunctionRegistry();
-  pc_registry_.insert(std::end(pc_registry_), v6.begin(), v6.end());
-
-  auto v7 = GetArrayFunctionRegistry();
-  pc_registry_.insert(std::end(pc_registry_), v7.begin(), v7.end());
-
-  for (auto& elem : pc_registry_) {
-    for (auto& func_signature : elem.signatures()) {
-      map.insert(std::make_pair(&(func_signature), &elem));
-    }
-  }
-
-  return map;
-}
-
 const NativeFunction* FunctionRegistry::LookupSignature(
     const FunctionSignature& signature) const {
   auto const got = pc_registry_map_.find(&signature);

@@ -35,9 +35,8 @@ class ExportedFuncsBase {
 
 // Class for exporting Array functions
 class ExportedArrayFunctions : public ExportedFuncsBase {
-  void AddMappings(Engine* engine) const override;
+  arrow::Status AddMappings(Engine* engine) const override;
 };
-REGISTER_EXPORTED_FUNCS(ExportedArrayFunctions);
 
 // Class for exporting Stub functions
 class ExportedStubFunctions : public ExportedFuncsBase {
