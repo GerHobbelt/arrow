@@ -215,14 +215,14 @@ DataTypePtr ProtoTypeToInterval(const gandiva::types::ExtGandivaType& ext_type) 
   }
 }
 
-DataTypePtr ProtoTypeToList(const types::ExtGandivaType& ext_type) {
+DataTypePtr ProtoTypeToList(const gandiva::types::ExtGandivaType& ext_type) {
   DataTypePtr childType = SimpleProtoTypeToDataType(ext_type.listtype());
   return arrow::list(childType);
 }
 
-DataTypePtr SimpleProtoTypeToDataType(const types::GandivaType& gandiva_type) {
+DataTypePtr SimpleProtoTypeToDataType(const gandiva::types::GandivaType& gandiva_type) {
   switch (gandiva_type) {
-    case types::NONE:
+    case gandiva::types::NONE:
       return arrow::null();
     case gandiva::types::BOOL:
       return arrow::boolean();
@@ -264,9 +264,9 @@ DataTypePtr SimpleProtoTypeToDataType(const types::GandivaType& gandiva_type) {
 
 
 
-DataTypePtr ProtoTypeToDataType(const types::ExtGandivaType& ext_type) {
+DataTypePtr ProtoTypeToDataType(const gandiva::types::ExtGandivaType& ext_type) {
   switch (ext_type.type()) {
-    case types::DECIMAL:
+    case gandiva::types::DECIMAL:
       // TODO: error handling
       return arrow::decimal(ext_type.precision(), ext_type.scale());
     case gandiva::types::TIME32:
@@ -291,8 +291,8 @@ DataTypePtr ProtoTypeToDataType(const types::ExtGandivaType& ext_type) {
   }
 }
 
-DataTypePtr ProtoTypeToDataType(const types::Field& f) {
-  const types::ExtGandivaType& ext_type = f.type();
+DataTypePtr ProtoTypeToDataType(const gandiva::types::Field& f) {
+  const gandiva::types::ExtGandivaType& ext_type = f.type();
   if (ext_type.type() == gandiva::types::LIST) {
       if (f.children().size() > 0 && f.children()[0].type().type() != gandiva::types::LIST) {
         DataTypePtr childType = ProtoTypeToDataType(f.children()[0].type());

@@ -136,12 +136,12 @@ void ArrowToProtobuf(DataTypePtr type, gandiva::types::ExtGandivaType* gandiva_d
       gandiva_data_type->set_intervaltype(gandiva::types::IntervalType::DAY_TIME);
       break;
     case arrow::Type::LIST: {
-      gandiva_data_type->set_type(types::GandivaType::LIST);
+      gandiva_data_type->set_type(gandiva::types::GandivaType::LIST);
       if (type->num_fields() <= 0) {
         break;
       }
       if (type->fields()[0]->type()->id() != arrow::Type::LIST) {
-        types::ExtGandivaType gt;
+        gandiva::types::ExtGandivaType gt;
         ArrowToProtobuf(type->fields()[0]->type(), &gt);
         gandiva_data_type->set_listtype(gt.type());
       }
