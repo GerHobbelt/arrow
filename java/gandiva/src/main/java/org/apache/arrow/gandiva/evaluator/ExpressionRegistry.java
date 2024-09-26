@@ -21,6 +21,8 @@ import com.google.protobuf.InvalidProtocolBufferException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+
+import org.apache.arrow.flatbuf.Type;
 import org.apache.arrow.gandiva.exceptions.GandivaException;
 import org.apache.arrow.gandiva.ipc.GandivaTypes;
 import org.apache.arrow.gandiva.ipc.GandivaTypes.ExtGandivaType;
@@ -124,7 +126,7 @@ public class ExpressionRegistry {
           paramTypes.add(paramArrowList);
         }
         FunctionSignature functionSignature =
-            new FunctionSignature(functionName, returnType, paramTypes);
+            new FunctionSignature(functionName, returnType, returnListType, paramTypes);
         supportedTypes.add(functionSignature);
       }
     } catch (InvalidProtocolBufferException invalidProtException) {
