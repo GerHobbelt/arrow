@@ -400,6 +400,7 @@ public class Projector {
     }
     wrapper.evaluateProjector(
         hasVariableWidthColumns ? new VectorExpander(resizableVectors) : null,
+        hasVariableWidthColumns ? new ListVectorExpander(resizableListVectors) : null,
         this.moduleId,
         numRows,
         bufAddrs,
