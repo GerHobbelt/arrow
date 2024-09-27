@@ -57,6 +57,7 @@ public class JniWrapper {
    */
   native void evaluateProjector(
       Object expander,
+      Object listExpander,
       long moduleId,
       int numRows,
       long[] bufAddrs,
