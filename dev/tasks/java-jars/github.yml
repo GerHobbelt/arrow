@@ -206,7 +206,12 @@ jobs:
 
   package-jars:
     name: Build jar files
-    runs-on: macos-14
+    runs-on: {{ '${{ matrix.platform.runs_on }}' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - { runs_on: ["macos-13"], arch: "x86_64"}
     needs:
       - build-cpp-ubuntu
       - build-cpp-macos
