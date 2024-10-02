@@ -14,14 +14,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.apache.arrow.gandiva.evaluator;
 
 import org.apache.arrow.vector.complex.ListVector;
 
 /**
- * This class provides the functionality to expand output ListVectors using a callback mechanism from
- * gandiva.
+ * This class provides the functionality to expand output ListVectors using a callback mechanism
+ * from gandiva.
  */
 public class ListVectorExpander {
   private final ListVector[] bufferVectors;
@@ -32,9 +31,7 @@ public class ListVectorExpander {
     this.bufferVectors = bufferVectors;
   }
 
-  /**
-   * Result of ListVector expansion.
-   */
+  /** Result of ListVector expansion. */
   public static class ExpandResult {
     public long address;
     public long capacity;
@@ -42,10 +39,10 @@ public class ListVectorExpander {
 
     /**
      * Result of expanding the buffer.
+     *
      * @param address Data buffer address
      * @param capacity Capacity
      * @param validAdd Validity buffer address
-     * 
      */
     public ExpandResult(long address, long capacity, long validAdd) {
       this.address = address;
@@ -55,13 +52,12 @@ public class ListVectorExpander {
   }
 
   /**
-   * Expand vector at specified index. This is used as a back call from jni, and is only
-   * relevant for ListVectors.
+   * Expand vector at specified index. This is used as a back call from jni, and is only relevant
+   * for ListVectors.
    *
    * @param index index of buffer in the list passed to jni.
    * @param toCapacity the size to which the buffer should be expanded to.
-   *
-   * @return address and size  of the buffer after expansion.
+   * @return address and size of the buffer after expansion.
    */
   public ExpandResult expandOutputVectorAtIndex(int index, long toCapacity) {
     if (index >= bufferVectors.length || bufferVectors[index] == null) {
@@ -69,15 +65,31 @@ public class ListVectorExpander {
     }
 
     ListVector vector = bufferVectors[index];
-    while (vector.getDataVector().getFieldBuffers().get(ListVectorExpander.valueBufferIndex).capacity() < toCapacity) {
-      //Just realloc the data vector.
+    while (vector
+            .getDataVector()
+            .getFieldBuffers()
+            .get(ListVectorExpander.valueBufferIndex)
+            .capacity()
+        < toCapacity) {
+      // Just realloc the data vector.
       vector.getDataVector().reAlloc();
     }
-    
-    return new ExpandResult(
-        vector.getDataVector().getFieldBuffers().get(ListVectorExpander.valueBufferIndex).memoryAddress(),
-        vector.getDataVector().getFieldBuffers().get(ListVectorExpander.valueBufferIndex).capacity(),
-        vector.getDataVector().getFieldBuffers().get(ListVectorExpander.validityBufferIndex).memoryAddress());
-  }
 
+    return new ExpandResult(
+        vector
+            .getDataVector()
+            .getFieldBuffers()
+            .get(ListVectorExpander.valueBufferIndex)
+            .memoryAddress(),
+        vector
+            .getDataVector()
+            .getFieldBuffers()
+            .get(ListVectorExpander.valueBufferIndex)
+            .capacity(),
+        vector
+            .getDataVector()
+            .getFieldBuffers()
+            .get(ListVectorExpander.validityBufferIndex)
+            .memoryAddress());
+  }
 }

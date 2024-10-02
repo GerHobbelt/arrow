@@ -18,7 +18,6 @@ package org.apache.arrow.gandiva.evaluator;
 
 import com.google.common.base.MoreObjects;
 import com.google.common.base.Objects;
-
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.arrow.vector.types.pojo.ArrowType;
@@ -54,7 +53,10 @@ public class FunctionSignature {
    * @param returnListType optional list type
    * @param paramTypes - data type of input args.
    */
-  public FunctionSignature(String name, ArrowType returnType, ArrowType returnListType, 
+  public FunctionSignature(
+      String name,
+      ArrowType returnType,
+      ArrowType returnListType,
       List<List<ArrowType>> paramTypes) {
     this.name = name;
     this.returnType = returnType;
@@ -64,6 +66,7 @@ public class FunctionSignature {
 
   /**
    * Ctor.
+   *
    * @param name - name of the function.
    * @param returnType - data type of return
    * @param paramTypes - data type of input args.
@@ -78,7 +81,6 @@ public class FunctionSignature {
       paramArrowList.add(paramType);
       this.paramTypes.add(paramArrowList);
     }
-    
   }
 
   /**
@@ -102,7 +104,8 @@ public class FunctionSignature {
 
   @Override
   public int hashCode() {
-    return Objects.hashCode(this.name.toLowerCase(), this.returnType, this.returnListType, this.paramTypes);
+    return Objects.hashCode(
+        this.name.toLowerCase(), this.returnType, this.returnListType, this.paramTypes);
   }
 
   @Override

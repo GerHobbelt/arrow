@@ -379,17 +379,33 @@ public class Projector {
         outAddrs[idx] = valueVector.getOffsetBuffer().memoryAddress();
         outSizes[idx++] = valueVector.getOffsetBuffer().capacity();
 
-        //vector valid
-        outAddrs[idx] = ((ListVector) valueVector).getDataVector().getFieldBuffers()
-            .get(ListVectorExpander.validityBufferIndex).memoryAddress();
-        outSizes[idx++] = ((ListVector) valueVector).getDataVector().getFieldBuffers()
-            .get(ListVectorExpander.validityBufferIndex).capacity();
+        // vector valid
+        outAddrs[idx] =
+            ((ListVector) valueVector)
+                .getDataVector()
+                .getFieldBuffers()
+                .get(ListVectorExpander.validityBufferIndex)
+                .memoryAddress();
+        outSizes[idx++] =
+            ((ListVector) valueVector)
+                .getDataVector()
+                .getFieldBuffers()
+                .get(ListVectorExpander.validityBufferIndex)
+                .capacity();
 
-        //vector offset
-        outAddrs[idx] = ((ListVector) valueVector).getDataVector().getFieldBuffers()
-            .get(ListVectorExpander.valueBufferIndex).memoryAddress();
-        outSizes[idx++] = ((ListVector) valueVector).getDataVector().getFieldBuffers()
-            .get(ListVectorExpander.valueBufferIndex).capacity();
+        // vector offset
+        outAddrs[idx] =
+            ((ListVector) valueVector)
+                .getDataVector()
+                .getFieldBuffers()
+                .get(ListVectorExpander.valueBufferIndex)
+                .memoryAddress();
+        outSizes[idx++] =
+            ((ListVector) valueVector)
+                .getDataVector()
+                .getFieldBuffers()
+                .get(ListVectorExpander.valueBufferIndex)
+                .capacity();
       } else {
         outAddrs[idx] = valueVector.getDataBuffer().memoryAddress();
         outSizes[idx++] = valueVector.getDataBuffer().capacity();

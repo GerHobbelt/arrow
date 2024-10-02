@@ -21,7 +21,6 @@ import com.google.protobuf.InvalidProtocolBufferException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-
 import org.apache.arrow.flatbuf.Type;
 import org.apache.arrow.gandiva.exceptions.GandivaException;
 import org.apache.arrow.gandiva.ipc.GandivaTypes;
@@ -113,7 +112,8 @@ public class ExpressionRegistry {
 
         String functionName = protoFunctionSignature.getName();
         ArrowType returnType = getArrowType(protoFunctionSignature.getReturnType());
-        ArrowType returnListType = getArrowTypeSimple(protoFunctionSignature.getReturnType().getListType());
+        ArrowType returnListType =
+            getArrowTypeSimple(protoFunctionSignature.getReturnType().getListType());
         List<List<ArrowType>> paramTypes = new ArrayList<List<ArrowType>>();
         for (ExtGandivaType type : protoFunctionSignature.getParamTypesList()) {
           ArrowType paramType = getArrowType(type);

@@ -260,8 +260,8 @@ public class ArrowTypeHelper {
    * @param builder the builder to use
    * @return Protobuf representing the arrow type
    */
-  public static GandivaTypes.ExtGandivaType arrowTypeToProtobuf(ArrowType arrowType, ArrowType subType,
-      GandivaTypes.ExtGandivaType.Builder builder)
+  public static GandivaTypes.ExtGandivaType arrowTypeToProtobuf(
+      ArrowType arrowType, ArrowType subType, GandivaTypes.ExtGandivaType.Builder builder)
       throws GandivaException {
 
     byte typeId = arrowType.getTypeID().getFlatbufID();
@@ -365,7 +365,6 @@ public class ArrowTypeHelper {
     return builder.build();
   }
 
-
   /**
    * Converts an arrow type into a protobuf.
    *
@@ -402,8 +401,8 @@ public class ArrowTypeHelper {
     builder.setNullable(field.isNullable());
 
     ArrowType subType = null;
-    if (field.getChildren().size() > 0 && field.getChildren().get(0)
-        .getType().getTypeID().getFlatbufID() != Type.List) {
+    if (field.getChildren().size() > 0
+        && field.getChildren().get(0).getType().getTypeID().getFlatbufID() != Type.List) {
       subType = field.getChildren().get(0).getType();
     }
 
@@ -413,7 +412,6 @@ public class ArrowTypeHelper {
         builder.addChildren(ArrowTypeHelper.arrowFieldToProtobuf(child));
       }
     }
-    
 
     return builder.build();
   }

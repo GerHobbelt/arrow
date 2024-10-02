@@ -17,13 +17,11 @@
 package org.apache.arrow.gandiva.expression;
 
 import java.util.List;
-
 import org.apache.arrow.flatbuf.Type;
 import org.apache.arrow.gandiva.exceptions.GandivaException;
 import org.apache.arrow.gandiva.ipc.GandivaTypes;
 import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
-
 
 /** Node representing an arbitrary function in an expression. */
 class FunctionNode implements TreeNode {
@@ -36,13 +34,12 @@ class FunctionNode implements TreeNode {
     this.function = function;
     this.children = children;
     this.retType = inField.getType();
-    if (inField.getChildren().size() > 0 && inField.getChildren().get(0)
-        .getType().getTypeID().getFlatbufID() != Type.List) {
+    if (inField.getChildren().size() > 0
+        && inField.getChildren().get(0).getType().getTypeID().getFlatbufID() != Type.List) {
       this.retListType = inField.getChildren().get(0).getType();
     } else {
       this.retListType = null;
     }
-    
   }
 
   FunctionNode(String function, List<TreeNode> children, ArrowType inType) {
@@ -51,7 +48,7 @@ class FunctionNode implements TreeNode {
     this.retType = inType;
     this.retListType = null;
   }
-  
+
   FunctionNode(String function, List<TreeNode> children, ArrowType inType, ArrowType listType) {
     this.function = function;
     this.children = children;
