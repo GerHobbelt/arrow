@@ -23,7 +23,7 @@
 #include <tuple>
 #include <unordered_map>
 #include <vector>
-#include "arrow/acero/concurrent_queue_internal.h"
+#include "arrow/acero/concurrent_queue.h"
 #include "arrow/acero/exec_plan.h"
 #include "arrow/acero/options.h"
 #include "arrow/acero/query_context.h"
@@ -586,7 +586,7 @@ class SortedMergeNode : public ExecNode {
   void EmitBatches() {
     while (true) {
       // Implementation note: If the queue is empty, we will block here
-      if (process_queue.Pop() == kPoisonPill) {
+      if (process_queue.WaitAndPop() == kPoisonPill) {
         EndFromProcessThread();
       }
       // Either we're out of data or something went wrong

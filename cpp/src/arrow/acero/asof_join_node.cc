@@ -18,7 +18,7 @@
 #include "arrow/acero/asof_join_node.h"
 #include "arrow/acero/accumulation_queue.h"
 #include "arrow/acero/backpressure_handler.h"
-#include "arrow/acero/concurrent_queue_internal.h"
+#include "arrow/acero/concurrent_queue.h"
 
 #include <atomic>
 #include <condition_variable>
@@ -1103,7 +1103,7 @@ class AsofJoinNode : public ExecNode {
 
   void ProcessThread() {
     for (;;) {
-      if (!process_.Pop()) {
+      if (!process_.WaitAndPop()) {
         EndFromProcessThread();
         return;
       }
