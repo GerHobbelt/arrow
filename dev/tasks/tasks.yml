@@ -758,18 +758,6 @@ tasks:
 
 {% endfor %}
 
-  # Separated these tasks from the loop above due to:
-  # - 'binary' verification is not platform dependent
-  # - 'yum' and 'apt' requires docker so we need to run the verification script
-  #   directly on the host
-  {% for target in ["binary", "yum", "apt"] %}
-  verify-rc-binaries-{{ target }}-linux-amd64:
-    ci: github
-    template: verify-rc/github.linux.amd64.yml
-    params:
-      target: {{ target }}
-  {% endfor %}
-
   ######################## macOS verification ################################
 
   {% for target in ["cpp", "integration", "python"] %}
