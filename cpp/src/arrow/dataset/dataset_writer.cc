@@ -75,7 +75,7 @@ class Throttle {
     {
       std::lock_guard<std::mutex> lg(mutex_);
       current_value_ -= values;
-      if (in_waiting_ > 0 && in_waiting_ <= max_value_) {
+      if (in_waiting_ > 0 && current_value_ <= max_value_) {
         in_waiting_ = 0;
         to_complete = backpressure_;
       }
