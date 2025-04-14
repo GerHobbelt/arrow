@@ -58,7 +58,7 @@ class Throttle {
       return Future<>::MakeFinished();
     }
     std::lock_guard<std::mutex> lg(mutex_);
-    if (values + current_value_ > max_value_) {
+    if (current_value_ > max_value_) {
       in_waiting_ = values;
       backpressure_ = Future<>::Make();
     } else {
