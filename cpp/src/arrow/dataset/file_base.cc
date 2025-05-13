@@ -556,8 +556,8 @@ Result<acero::ExecNode*> MakeWriteNode(acero::ExecPlan* plan,
 
   std::shared_ptr<DatasetWritingSinkNodeConsumer> consumer =
       std::make_shared<DatasetWritingSinkNodeConsumer>(
-          custom_schema,
-                                                       write_node_options.write_options, write_node_options.max_rows_queued);
+          custom_schema, write_node_options.write_options,
+          write_node_options.max_rows_queued);
   ARROW_ASSIGN_OR_RAISE(
       auto node,
       // to preserve order explicitly sequence the exec batches
