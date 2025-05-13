@@ -385,6 +385,9 @@ class ARROW_DS_EXPORT FileWriter {
   std::optional<int64_t> bytes_written_;
 };
 
+// This lines up with our other defaults in the scanner and execution plan
+constexpr uint64_t kDefaultDatasetWriterMaxRowsQueued = 8 * 1024 * 1024;
+
 /// \brief Options for writing a dataset.
 struct ARROW_DS_EXPORT FileSystemDatasetWriteOptions {
   /// Options for individual fragment writing.
@@ -483,6 +486,9 @@ class ARROW_DS_EXPORT WriteNodeOptions : public acero::ExecNodeOptions {
   std::shared_ptr<Schema> custom_schema;
   /// \brief Optional metadata to attach to written batches
   std::shared_ptr<const KeyValueMetadata> custom_metadata;
+
+  /// Maximum rows queued before issuing pasue to upstream node
+  uint64_t max_rows_queued = kDefaultDatasetWriterMaxRowsQueued;
 };
 
 /// @}
