@@ -452,9 +452,11 @@ Status ValidateAndPrepareSchema(const WriteNodeOptions& write_node_options,
 class DatasetWritingSinkNodeConsumer : public acero::SinkNodeConsumer {
  public:
   DatasetWritingSinkNodeConsumer(std::shared_ptr<Schema> custom_schema,
-                                 FileSystemDatasetWriteOptions write_options)
+                                 FileSystemDatasetWriteOptions write_options,
+                                 uint64_t max_rows_queued)
       : custom_schema_(std::move(custom_schema)),
-        write_options_(std::move(write_options)) {}
+        write_options_(std::move(write_options)),
+        max_rows_queued_(max_rows_queued) {}
 
   Status Init(const std::shared_ptr<Schema>& schema,
               acero::BackpressureControl* backpressure_control,
@@ -464,12 +466,12 @@ class DatasetWritingSinkNodeConsumer : public acero::SinkNodeConsumer {
     } else {
       schema_ = schema;
     }
-    ARROW_ASSIGN_OR_RAISE(
-        dataset_writer_,
-        internal::DatasetWriter::Make(
-            write_options_, plan->query_context()->async_scheduler(),
-            [backpressure_control] { backpressure_control->Pause(); },
-            [backpressure_control] { backpressure_control->Resume(); }, [] {}));
+    ARROW_ASSIGN_OR_RAISE(dataset_writer_,
+                          internal::DatasetWriter::Make(
+                              write_options_, plan->query_context()->async_scheduler(),
+                              [backpressure_control] { backpressure_control->Pause(); },
+                              [backpressure_control] { backpressure_control->Resume(); },
+                              [] {}, max_rows_queued_));
     return Status::OK();
   }
 
@@ -501,6 +503,7 @@ class DatasetWritingSinkNodeConsumer : public acero::SinkNodeConsumer {
   std::shared_ptr<Schema> custom_schema_;
   std::unique_ptr<internal::DatasetWriter> dataset_writer_;
   FileSystemDatasetWriteOptions write_options_;
+  uint64_t max_rows_queued_;
   Future<> finished_ = Future<>::Make();
   std::shared_ptr<Schema> schema_ = nullptr;
 };
@@ -554,17 +557,19 @@ Result<acero::ExecNode*> MakeWriteNode(acero::ExecPlan* plan,
       ValidateAndPrepareSchema(write_node_options, input_schema, custom_schema));
 
   std::shared_ptr<DatasetWritingSinkNodeConsumer> consumer =
-      std::make_shared<DatasetWritingSinkNodeConsumer>(custom_schema,
-                                                       write_node_options.write_options);
+      std::make_shared<DatasetWritingSinkNodeConsumer>(
+          custom_schema, write_node_options.write_options,
+          write_node_options.max_rows_queued);
   ARROW_ASSIGN_OR_RAISE(
       auto node,
       // to preserve order explicitly, sequence the exec batches
       // this requires exec batch index to be set upstream (e.g. by SourceNode)
-      acero::MakeExecNode("consuming_sink", plan, std::move(inputs),
-                          acero::ConsumingSinkNodeOptions{
-                              std::move(consumer),
-                              {},
-                              /*sequence_output=*/write_node_options.write_options.preserve_order}));
+      acero::MakeExecNode(
+          "consuming_sink", plan, std::move(inputs),
+          acero::ConsumingSinkNodeOptions{
+              std::move(consumer),
+              {},
+              /*sequence_output=*/write_node_options.write_options.preserve_order}));
 
   return node;
 }
@@ -576,20 +581,21 @@ class TeeNode : public acero::MapNode,
  public:
   TeeNode(acero::ExecPlan* plan, std::vector<acero::ExecNode*> inputs,
           std::shared_ptr<Schema> output_schema,
-          FileSystemDatasetWriteOptions write_options)
+          FileSystemDatasetWriteOptions write_options, uint64_t max_rows_queued)
       : MapNode(plan, std::move(inputs), std::move(output_schema)),
-        write_options_(std::move(write_options)) {
+        write_options_(std::move(write_options)),
+        max_rows_queued_(max_rows_queued) {
     if (write_options.preserve_order) {
       sequencer_ = acero::util::SerialSequencingQueue::Make(this);
     }
   }
 
   Status StartProducing() override {
-    ARROW_ASSIGN_OR_RAISE(
-        dataset_writer_,
-        internal::DatasetWriter::Make(
-            write_options_, plan_->query_context()->async_scheduler(),
-            [this] { Pause(); }, [this] { Resume(); }, [this] { MapNode::Finish(); }));
+    ARROW_ASSIGN_OR_RAISE(dataset_writer_,
+                          internal::DatasetWriter::Make(
+                              write_options_, plan_->query_context()->async_scheduler(),
+                              [this] { Pause(); }, [this] { Resume(); },
+                              [this] { MapNode::Finish(); }, max_rows_queued_));
     return MapNode::StartProducing();
   }
 
@@ -607,7 +613,8 @@ class TeeNode : public acero::MapNode,
         ValidateAndPrepareSchema(write_node_options, input_schema, custom_schema));
 
     return plan->EmplaceNode<TeeNode>(plan, std::move(inputs), std::move(custom_schema),
-                                      std::move(write_node_options.write_options));
+                                      std::move(write_node_options.write_options),
+                                      write_node_options.max_rows_queued);
   }
 
   const char* kind_name() const override { return "TeeNode"; }
@@ -656,6 +663,7 @@ class TeeNode : public acero::MapNode,
  private:
   std::unique_ptr<internal::DatasetWriter> dataset_writer_;
   FileSystemDatasetWriteOptions write_options_;
+  uint64_t max_rows_queued_;
   std::atomic<int32_t> backpressure_counter_ = 0;
   std::unique_ptr<acero::util::SerialSequencingQueue> sequencer_{nullptr};
 };
