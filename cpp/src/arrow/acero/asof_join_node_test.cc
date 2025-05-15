@@ -1294,14 +1294,6 @@ TRACED_TEST(AsofJoinTest, TestUnsupportedByType, {
                                field("r0_v0", float32())}));
 })
 
-TRACED_TEST(AsofJoinTest, TestUnsupportedDatatype, {
-  // List is unsupported
-  DoRunInvalidTypeTest(
-      schema({field("time", int64()), field("key", int32()), field("l_v0", float64())}),
-      schema({field("time", int64()), field("key", int32()),
-              field("r0_v0", list(int32()))}));
-})
-
 TRACED_TEST(AsofJoinTest, TestMissingKeys, {
   DoRunMissingKeysTest(
       schema({field("time1", int64()), field("key", int32()), field("l_v0", float64())}),
@@ -1824,5 +1816,237 @@ TEST(AsofJoinTest, OneSideTsAllGreaterThanTheOther) {
   }
 }
 
+// Reproduction of GH-46224: Hang when all left timestamps are greater than right
+// timestamps.
+TEST(AsofJoinTest, OneSideTsAllGreaterThanTheOther) {
+#if defined(ARROW_VALGRIND) || defined(ADDRESS_SANITIZER)
+  const int rounds = 1;
+#else
+  const int rounds = 42;
+#endif
+  int64_t tolerance = 1;
+  int64_t num_rows_big_ts = 1;
+  int64_t num_rows_small_ts = ExecPlan::kMaxBatchSize + 1;
+  // Make sure the big_ts is outside the horizon of the tolerance regardless of the side.
+  int64_t big_ts = num_rows_small_ts + tolerance + 1;
+
+  // Column of big timestamps.
+  ASSERT_OK_AND_ASSIGN(auto col_big_ts,
+                       gen::Constant(MakeScalar(big_ts))->Generate(num_rows_big_ts));
+  // Column of small timestamps from 0 to num_rows_small_ts - 1.
+  ASSERT_OK_AND_ASSIGN(auto col_small_ts,
+                       gen::Step<int64_t>()->Generate(num_rows_small_ts));
+
+  struct Case {
+    std::shared_ptr<arrow::Array> left_col;
+    std::shared_ptr<arrow::Array> right_col;
+  };
+
+  for (const auto& c : {
+           Case{col_big_ts, col_small_ts},
+           Case{col_small_ts, col_big_ts},
+       }) {
+    auto left_schema = arrow::schema({arrow::field("on", int64())});
+    auto right_schema = arrow::schema({arrow::field("on", int64())});
+
+    ExecBatch left_batch({c.left_col}, c.left_col->length());
+    ExecBatch right_batch({c.right_col}, c.right_col->length());
+    ASSERT_OK_AND_ASSIGN(auto col_null, MakeArrayOfNull(int64(), c.left_col->length()));
+    ExecBatch exp_batch({c.left_col, col_null}, c.left_col->length());
+
+    // Run moderate number of times to ensure that no hangs occur.
+    for (int i = 0; i < rounds; ++i) {
+      AsofJoinNodeOptions opts({{{"on"}, {}}, {{"on"}, {}}}, tolerance);
+      auto left = Declaration("exec_batch_source",
+                              ExecBatchSourceNodeOptions(left_schema, {left_batch}));
+      auto right = Declaration("exec_batch_source",
+                               ExecBatchSourceNodeOptions(right_schema, {right_batch}));
+      auto asof_join = arrow::acero::Declaration{"asofjoin", {left, right}, opts};
+      ASSERT_OK_AND_ASSIGN(auto result,
+                           arrow::acero::DeclarationToExecBatches(std::move(asof_join)));
+      AssertExecBatchesEqualIgnoringOrder(result.schema, {exp_batch}, result.batches);
+    }
+  }
+}
+
+// Reproduction of GH-46224: Hang when all left timestamps are greater than right
+// timestamps.
+TEST(AsofJoinTest, OneSideTsAllGreaterThanTheOther) {
+#if defined(ARROW_VALGRIND) || defined(ADDRESS_SANITIZER)
+  const int rounds = 1;
+#else
+  const int rounds = 42;
+#endif
+  int64_t tolerance = 1;
+  int64_t num_rows_big_ts = 1;
+  int64_t num_rows_small_ts = ExecPlan::kMaxBatchSize + 1;
+  // Make sure the big_ts is outside the horizon of the tolerance regardless of the side.
+  int64_t big_ts = num_rows_small_ts + tolerance + 1;
+
+  // Column of big timestamps.
+  ASSERT_OK_AND_ASSIGN(auto col_big_ts,
+                       gen::Constant(MakeScalar(big_ts))->Generate(num_rows_big_ts));
+  // Column of small timestamps from 0 to num_rows_small_ts - 1.
+  ASSERT_OK_AND_ASSIGN(auto col_small_ts,
+                       gen::Step<int64_t>()->Generate(num_rows_small_ts));
+
+  struct Case {
+    std::shared_ptr<arrow::Array> left_col;
+    std::shared_ptr<arrow::Array> right_col;
+  };
+
+  for (const auto& c : {
+           Case{col_big_ts, col_small_ts},
+           Case{col_small_ts, col_big_ts},
+       }) {
+    auto left_schema = arrow::schema({arrow::field("on", int64())});
+    auto right_schema = arrow::schema({arrow::field("on", int64())});
+
+    ExecBatch left_batch({c.left_col}, c.left_col->length());
+    ExecBatch right_batch({c.right_col}, c.right_col->length());
+    ASSERT_OK_AND_ASSIGN(auto col_null, MakeArrayOfNull(int64(), c.left_col->length()));
+    ExecBatch exp_batch({c.left_col, col_null}, c.left_col->length());
+
+    // Run moderate number of times to ensure that no hangs occur.
+    for (int i = 0; i < rounds; ++i) {
+      AsofJoinNodeOptions opts({{{"on"}, {}}, {{"on"}, {}}}, tolerance);
+      auto left = Declaration("exec_batch_source",
+                              ExecBatchSourceNodeOptions(left_schema, {left_batch}));
+      auto right = Declaration("exec_batch_source",
+                               ExecBatchSourceNodeOptions(right_schema, {right_batch}));
+      auto asof_join = arrow::acero::Declaration{"asofjoin", {left, right}, opts};
+      ASSERT_OK_AND_ASSIGN(auto result,
+                           arrow::acero::DeclarationToExecBatches(std::move(asof_join)));
+      AssertExecBatchesEqualIgnoringOrder(result.schema, {exp_batch}, result.batches);
+    }
+  }
+}
+
+// GH-44729: Testing nested data type for non-key fields
+TEST(AsofJoinTest, FixedListDataType) {
+  const int32_t list_size = 3;
+  auto list_type = arrow::fixed_size_list(arrow::int32(), list_size);
+
+  auto left_batch = ExecBatchFromJSON({int64()}, R"([[1], [2], [3]])");
+  auto right_batch = ExecBatchFromJSON({list_type, int64()}, R"([
+        [[0, 1, 2], 2],
+        [[3, 4, 5], 3],
+        [[6, 7, 8], 4]
+      ])");
+
+  Declaration left{"exec_batch_source",
+                   ExecBatchSourceNodeOptions(schema({field("on", int64())}),
+                                              {std::move(left_batch)})};
+  Declaration right{"exec_batch_source",
+                    ExecBatchSourceNodeOptions(
+                        schema({field("colVals", list_type), field("on", int64())}),
+                        {std::move(right_batch)})};
+
+  AsofJoinNodeOptions asof_join_opts({{{"on"}, {}}, {{"on"}, {}}}, 1);
+  Declaration asof_join{
+      "asofjoin", {std::move(left), std::move(right)}, std::move(asof_join_opts)};
+
+  ASSERT_OK_AND_ASSIGN(auto result, DeclarationToExecBatches(std::move(asof_join)));
+
+  auto exp_batch = ExecBatchFromJSON({int64(), list_type}, R"([
+      [1, [0, 1, 2]],
+      [2, [0, 1, 2]],
+      [3, [3, 4, 5]]
+    ])");
+
+  AssertExecBatchesEqual(result.schema, {exp_batch}, result.batches);
+}
+
+TEST(AsofJoinTest, ListDataType) {
+  auto list_type = list(int32());
+
+  auto left_batch = ExecBatchFromJSON({int64()}, R"([[1], [2], [3]])");
+  auto right_batch = ExecBatchFromJSON({list_type, int64()}, R"([
+      [[0, 1, 2, 9], 2],
+      [[3, 4, 5, 7], 3],
+      [[6, 7, 8], 4]
+      ])");
+
+  Declaration left{"exec_batch_source",
+                   ExecBatchSourceNodeOptions(schema({field("on", int64())}),
+                                              {std::move(left_batch)})};
+  Declaration right{"exec_batch_source",
+                    ExecBatchSourceNodeOptions(
+                        schema({field("colVals", list_type), field("on", int64())}),
+                        {std::move(right_batch)})};
+
+  AsofJoinNodeOptions asof_join_opts({{{"on"}, {}}, {{"on"}, {}}}, 1);
+  Declaration asof_join{
+      "asofjoin", {std::move(left), std::move(right)}, std::move(asof_join_opts)};
+
+  ASSERT_OK_AND_ASSIGN(auto result, DeclarationToExecBatches(std::move(asof_join)));
+  auto exp_batch = ExecBatchFromJSON({int64(), list_type}, R"([
+      [1, [0, 1, 2, 9]],
+      [2, [0, 1, 2, 9]],
+      [3, [3, 4, 5, 7]]
+    ])");
+
+  AssertExecBatchesEqual(result.schema, {exp_batch}, result.batches);
+}
+
+TEST(AsofJoinTest, StructTestDataType) {
+  auto struct_type = struct_({field("key", utf8()), field("value", int64())});
+
+  auto left_batch = ExecBatchFromJSON({int64()}, R"([[1], [2], [3]])");
+  auto right_batch = ExecBatchFromJSON({struct_type, int64()}, R"([
+    [{"key": "a", "value": 1}, 2],
+    [{"key": "b", "value": 3}, 3], 
+    [{"key": "c", "value": 5}, 4]
+  ])");
+
+  Declaration left{"exec_batch_source",
+                   ExecBatchSourceNodeOptions(schema({field("on", int64())}),
+                                              {std::move(left_batch)})};
+  Declaration right{"exec_batch_source",
+                    ExecBatchSourceNodeOptions(
+                        schema({field("col", struct_type), field("on", int64())}),
+                        {std::move(right_batch)})};
+  AsofJoinNodeOptions asof_join_opts({{{"on"}, {}}, {{"on"}, {}}}, 1);
+  Declaration asof_join{
+      "asofjoin", {std::move(left), std::move(right)}, std::move(asof_join_opts)};
+  ASSERT_OK_AND_ASSIGN(auto result, DeclarationToExecBatches(std::move(asof_join)));
+
+  auto exp_batch = ExecBatchFromJSON({int64(), struct_type}, R"([
+      [1, {"key": "a", "value": 1}],
+      [2, {"key": "a", "value": 1}],
+      [3, {"key": "b", "value": 3}]
+    ])");
+  AssertExecBatchesEqual(result.schema, {exp_batch}, result.batches);
+}
+
+TEST(AsofJoinTest, MapTestDataType) {
+  auto map_type = map(int64(), int64());
+
+  auto left_batch = ExecBatchFromJSON({int64()}, R"([[1], [2], [3]])");
+  auto right_batch = ExecBatchFromJSON({map_type, int64()}, R"([
+      [[[11, 111], [22, 222]], 2],
+      [[[33, 333], [44, 444], [77, 777]], 3], 
+      [[[55, 555], [66, 666]], 4]
+    ])");
+
+  Declaration left{"exec_batch_source",
+                   ExecBatchSourceNodeOptions(schema({field("on", int64())}),
+                                              {std::move(left_batch)})};
+  Declaration right{
+      "exec_batch_source",
+      ExecBatchSourceNodeOptions(schema({field("col", map_type), field("on", int64())}),
+                                 {std::move(right_batch)})};
+  AsofJoinNodeOptions asof_join_opts({{{"on"}, {}}, {{"on"}, {}}}, 1);
+  Declaration asof_join{
+      "asofjoin", {std::move(left), std::move(right)}, std::move(asof_join_opts)};
+
+  ASSERT_OK_AND_ASSIGN(auto result, DeclarationToExecBatches(std::move(asof_join)));
+  auto exp_batch = ExecBatchFromJSON({int64(), map_type}, R"([
+      [1, [[11, 111], [22, 222]]],
+      [2, [[11, 111], [22, 222]]],
+      [3, [[33, 333], [44, 444], [77, 777]]]
+    ])");
+  AssertExecBatchesEqual(result.schema, {exp_batch}, result.batches);
+}
 }  // namespace acero
 }  // namespace arrow
