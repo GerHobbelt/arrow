@@ -222,6 +222,7 @@ struct ConversionTraits<Optional, enable_if_optional_like<Optional>>
   using OptionalInnerType =
       typename std::decay<decltype(*std::declval<Optional>())>::type;
   using typename CTypeTraits<OptionalInnerType>::ArrowType;
+  using typename CTypeTraits<OptionalInnerType>::ArrayType;
   using CTypeTraits<OptionalInnerType>::type_singleton;
 
   static Status AppendRow(typename TypeTraits<ArrowType>::BuilderType& builder,
@@ -230,6 +231,14 @@ struct ConversionTraits<Optional, enable_if_optional_like<Optional>>
       return ConversionTraits<OptionalInnerType>::AppendRow(builder, *cell);
     } else {
       return builder.AppendNull();
+    }
+  }
+
+  static Optional GetEntry(const ArrayType& array, size_t j) {
+    if (array.IsNull(j)) {
+      return {};
+    } else {
+      return ConversionTraits<OptionalInnerType>::GetEntry(array, j);
     }
   }
 };
