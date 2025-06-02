@@ -407,7 +407,7 @@ if(ARROW_AZURE)
   set(ARROW_WITH_AZURE_SDK ON)
 endif()
 
-if(ARROW_JSON)
+if(ARROW_JSON OR ARROW_FLIGHT_SQL_ODBC)
   set(ARROW_WITH_RAPIDJSON ON)
 endif()
 
@@ -1256,6 +1256,7 @@ endif()
 if(ARROW_BUILD_INTEGRATION
    OR ARROW_BUILD_TESTS
    OR (ARROW_FLIGHT AND (ARROW_TESTING OR ARROW_BUILD_BENCHMARKS))
+   OR ARROW_FLIGHT_SQL_ODBC
    OR (ARROW_S3 AND ARROW_BUILD_BENCHMARKS)
    OR (ARROW_TESTING AND ARROW_BUILD_SHARED))
   set(ARROW_USE_BOOST TRUE)
@@ -1282,6 +1283,9 @@ if(ARROW_USE_BOOST)
   endif()
   if(ARROW_BOOST_REQUIRE_LIBRARY)
     set(ARROW_BOOST_COMPONENTS filesystem system)
+    if(ARROW_FLIGHT_SQL_ODBC AND MSVC)
+      list(APPEND ARROW_BOOST_COMPONENTS locale)
+    endif()
     set(ARROW_BOOST_OPTIONAL_COMPONENTS process)
   else()
     set(ARROW_BOOST_COMPONENTS)
@@ -4922,7 +4926,7 @@ macro(build_opentelemetry)
        -DWITH_OTLP_HTTP_SSL_PREVIEW=OFF
        -DWITH_OTLP_HTTP_SSL_TLS_PREVIEW=OFF
        "-DProtobuf_INCLUDE_DIR=${OPENTELEMETRY_PROTOBUF_INCLUDE_DIR}"
-       "-DProtobuf_LIBRARY=${OPENTELEMETRY_PROTOBUF_INCLUDE_DIR}"
+       "-DProtobuf_LIBRARY=${OPENTELEMETRY_PROTOBUF_LIBRARY}"
        "-DProtobuf_PROTOC_EXECUTABLE=${OPENTELEMETRY_PROTOC_EXECUTABLE}")
 
   # OpenTelemetry with OTLP enabled requires Protobuf definitions from a
@@ -5571,6 +5575,13 @@ if(ARROW_WITH_AZURE_SDK)
   resolve_dependency(Azure REQUIRED_VERSION 1.10.2)
   set(AZURE_SDK_LINK_LIBRARIES Azure::azure-storage-files-datalake
                                Azure::azure-storage-blobs Azure::azure-identity)
+endif()
+
+# ----------------------------------------------------------------------
+# Apache Flight SQL ODBC
+
+if(ARROW_FLIGHT_SQL_ODBC)
+  find_package(ODBC REQUIRED)
 endif()
 
 message(STATUS "All bundled static libraries: ${ARROW_BUNDLED_STATIC_LIBS}")
