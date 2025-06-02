@@ -1067,6 +1067,7 @@ class AsofJoinNode : public ExecNode {
 
     // Process batches while we have data
     for (;;) {
+      backpressure_future_.Wait();
       Result<std::shared_ptr<RecordBatch>> result = ProcessInner();
 
       if (result.ok()) {
@@ -1106,7 +1107,6 @@ class AsofJoinNode : public ExecNode {
         EndFromProcessThread();
         return;
       }
-      backpressure_future_.Wait();
       if (!Process()) {
         return;
       }
