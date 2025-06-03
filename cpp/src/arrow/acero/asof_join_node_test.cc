@@ -45,6 +45,7 @@
 #include "arrow/compute/row/row_encoder_internal.h"
 #include "arrow/compute/test_util_internal.h"
 #include "arrow/io/util_internal.h"
+#include "arrow/testing/generator.h"
 #include "arrow/testing/gtest_util.h"
 #include "arrow/testing/matchers.h"
 #include "arrow/testing/random.h"
@@ -1404,15 +1405,28 @@ struct BackpressureCountingNode : public MapNode {
   Result<ExecBatch> ProcessBatch(ExecBatch batch) override { return batch; }
 
   void PauseProducing(ExecNode* output, int32_t counter) override {
-    ++counters->pause_count;
+    std::lock_guard<std::mutex> lg(mutex_);
+    if (counter > backpressure_counter_) {
+      backpressure_counter_ = counter;
+      if (!paused) ++counters->pause_count;
+      paused = true;
+    }
     inputs()[0]->PauseProducing(this, counter);
   }
   void ResumeProducing(ExecNode* output, int32_t counter) override {
-    ++counters->resume_count;
+    std::lock_guard<std::mutex> lg(mutex_);
+    if (counter > backpressure_counter_) {
+      backpressure_counter_ = counter;
+      if (paused) ++counters->resume_count;
+      paused = false;
+    }
     inputs()[0]->ResumeProducing(this, counter);
   }
 
   BackpressureCounters* counters;
+  std::mutex mutex_;
+  std::atomic<int32_t> backpressure_counter_{0};
+  bool paused{false};
 };
 
 AsyncGenerator<std::optional<ExecBatch>> GetGen(
@@ -1577,7 +1591,6 @@ TEST(AsofJoinTest, PauseProducingAsofJoinSource) {
   std::optional<ExecBatch> out = out_batch.batches[0];
 
   constexpr uint32_t thresholdOfBackpressureAsof = 8;
-  constexpr uint32_t thresholdOfBackpressureAsofLow = 4;
 
   EXPECT_OK_AND_ASSIGN(std::shared_ptr<ExecPlan> plan, ExecPlan::Make());
   PushGenerator<std::optional<ExecBatch>> batch_producer_left;
@@ -1592,7 +1605,7 @@ TEST(AsofJoinTest, PauseProducingAsofJoinSource) {
 
   Declaration left{"source", SourceNodeOptions(l_schema, batch_producer_left)};
   Declaration right{"source", SourceNodeOptions(r_schema, batch_producer_right)};
-  AsofJoinNodeOptions asof_join_opts({{{"time"}, {}}, {{"time"}, {}}}, 1);
+  AsofJoinNodeOptions asof_join_opts({{{"time"}, {}}, {{"time"}, {}}}, 0);
 
   BackpressureCounters bp_countersl, bp_countersr;
   BackpressureCountingNode::Register();
@@ -1634,23 +1647,22 @@ TEST(AsofJoinTest, PauseProducingAsofJoinSource) {
   // Should be able to push kPauseIfAbove batches without triggering back pressure
   uint32_t l_cnt = 0;
   uint32_t r_cnt = 0;
-  // for (uint32_t i = 0; i < 1; i++) {
+
   EXPECT_FALSE(is_l_paused());
   EXPECT_FALSE(is_r_paused());
   EXPECT_FALSE(backpressure_monitor->is_paused());
   batch_producer_left.producer().Push(l_batches.batches[l_cnt++]);
   batch_producer_right.producer().Push(r0_batches.batches[r_cnt++]);
-  // }
 
-  // One more batch should trigger back pressure
-
-  BusyWait(60.0, [&]() { return backpressure_monitor->is_paused(); });
+  // this should trigger pause on sink
+  BusyWait(3.0, [&]() { return backpressure_monitor->is_paused(); });
   arrow::io::internal::GetIOThreadPool()->WaitForIdle();
   arrow::internal::GetCpuThreadPool()->WaitForIdle();
 
   EXPECT_FALSE(is_l_paused());
   EXPECT_FALSE(is_r_paused());
   EXPECT_TRUE(backpressure_monitor->is_paused());
+
   batch_producer_left.producer().Push(l_batches.batches[l_cnt++]);
   arrow::internal::GetCpuThreadPool()->WaitForIdle();
   batch_producer_right.producer().Push(r0_batches.batches[r_cnt++]);
@@ -1669,40 +1681,32 @@ TEST(AsofJoinTest, PauseProducingAsofJoinSource) {
     batch_producer_right.producer().Push(r0_batches.batches[r_cnt++]);
   }
 
+  BusyWait(3.0, is_l_paused);
+  BusyWait(3.0, is_r_paused);
+  arrow::io::internal::GetIOThreadPool()->WaitForIdle();
+  arrow::internal::GetCpuThreadPool()->WaitForIdle();
+  // Verify pause propagates
+  EXPECT_TRUE(is_l_paused());
+  EXPECT_TRUE(is_r_paused());
+
   std::optional<ExecBatch> opt_batch;
-  arrow::internal::GetCpuThreadPool()->WaitForIdle();
-  // Read the batches from the sink to open up input of the asof join node
-  for (uint32_t i = 0; i < thresholdOfBackpressureAsof - thresholdOfBackpressureAsofLow;
-       i++) {
-    SleepABit();
-    EXPECT_TRUE(is_l_paused());
-    EXPECT_TRUE(is_r_paused());
-    EXPECT_TRUE(backpressure_monitor->is_paused());
 
+  do {
     ASSERT_FINISHES_OK_AND_ASSIGN(opt_batch, sink_gen());
-    EXPECT_TRUE(opt_batch);
-  }
+    ASSERT_TRUE(opt_batch);
+    l_cnt -= opt_batch->length;
+  } while (l_cnt);
 
+  BusyWait(3.0, [&]() { return !is_l_paused(); });
+  BusyWait(3.0, [&]() { return !is_r_paused(); });
+  arrow::io::internal::GetIOThreadPool()->WaitForIdle();
   arrow::internal::GetCpuThreadPool()->WaitForIdle();
-
-  // Finish the batches in the left and right producers
-  for (uint32_t i = 0; i < thresholdOfBackpressureAsofLow + 1; i++) {
-    SleepABit();
-    EXPECT_FALSE(is_l_paused());
-    EXPECT_FALSE(is_r_paused());
-    ASSERT_FINISHES_OK_AND_ASSIGN(opt_batch, sink_gen());
-    EXPECT_TRUE(opt_batch);
-  }
-
   EXPECT_FALSE(is_l_paused());
   EXPECT_FALSE(is_r_paused());
   EXPECT_FALSE(backpressure_monitor->is_paused());
 
   batch_producer_left.producer().Push(IterationEnd<std::optional<ExecBatch>>());
   batch_producer_right.producer().Push(IterationEnd<std::optional<ExecBatch>>());
-
-  ASSERT_FINISHES_OK_AND_ASSIGN(opt_batch, sink_gen());
-  EXPECT_FALSE(opt_batch);
 
   ASSERT_THAT(fut, Finishes(Ok()));
 }
