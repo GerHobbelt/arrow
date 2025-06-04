@@ -1001,6 +1001,7 @@ class AsofJoinNode : public ExecNode {
         dst.Emplace(state_, tolerance_);
         ARROW_ASSIGN_OR_RAISE(bool advanced, lhs.Advance());
         if (!advanced) break;  // if we can't advance LHS, we're done for this batch
+        if (lhs.GetLatestRow() == 0) break;  // Keep lhs batch boundary
       } else {
         if (!rhs_update_state.any_advanced) break;  // need to wait for new data
       }
