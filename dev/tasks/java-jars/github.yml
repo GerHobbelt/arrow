@@ -148,6 +148,18 @@ jobs:
           # used on test  We uninstall Homebrew's Protobuf to ensure using
           # bundled Protobuf.
           brew uninstall protobuf
+          # fix cmake and boost versionsAdd commentMore actions
+          brew uninstall -f boost || true
+          brew uninstall -f cmake || true
+          mkdir -p homebrew-custom/Formula
+          curl -o homebrew-custom/Formula/cmake.rb https://raw.githubusercontent.com/Homebrew/homebrew-core/f68532bfe5cb87474093df8a839c3818c6aa44dd/Formula/c/cmake.rb
+          curl -o homebrew-custom/Formula/boost.rb https://raw.githubusercontent.com/Homebrew/homebrew-core/23f9c56c5075dd56b4471e2c93f89f6400b49ddd/Formula/b/boost.rb
+          brew install -v ./homebrew-custom/Formula/cmake.rb
+          brew install -v ./homebrew-custom/Formula/boost.rb
+          brew pin cmake
+          brew pin boost
+          #
+
 
           brew bundle --file=arrow/java/Brewfile
       - name: Build C++ libraries

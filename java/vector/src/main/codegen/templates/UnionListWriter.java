@@ -201,6 +201,18 @@ public class Union${listName}Writer extends AbstractFieldWriter {
     return mapWriter;
   }
 
+  @Override
+  public ExtensionWriter extension(ArrowType arrowType) {
+    writer.extension(arrowType);
+    return writer;
+  }
+  
+  @Override
+  public ExtensionWriter extension(String name, ArrowType arrowType) {
+    ExtensionWriter extensionWriter = writer.extension(name, arrowType);
+    return extensionWriter;
+  }
+
   <#if listName == "LargeList">
   @Override
   public void startList() {
@@ -321,6 +333,20 @@ public class Union${listName}Writer extends AbstractFieldWriter {
     } else {
       writer.writeNull();
     }
+  }
+
+  @Override
+  public void writeExtension(Object value) {
+    writer.writeExtension(value);
+  }
+  
+  @Override
+  public void addExtensionTypeWriterFactory(ExtensionTypeWriterFactory var1) {
+    writer.addExtensionTypeWriterFactory(var1);
+  }
+  
+  public void write(ExtensionHolder var1) {
+    writer.write(var1);
   }
 
   <#list vv.types as type>
