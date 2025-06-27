@@ -203,8 +203,7 @@ public class Union${listName}Writer extends AbstractFieldWriter {
 
   @Override
   public ExtensionWriter extension(ArrowType arrowType) {
-    writer.extension(arrowType);
-    return writer;
+    return this;
   }
   
   @Override
