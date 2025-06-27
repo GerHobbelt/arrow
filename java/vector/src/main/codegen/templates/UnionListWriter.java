@@ -337,6 +337,7 @@ public class Union${listName}Writer extends AbstractFieldWriter {
   @Override
   public void writeExtension(Object value) {
     writer.writeExtension(value);
+    writer.setPosition(writer.idx() + 1);
   }
   
   @Override
@@ -346,6 +347,7 @@ public class Union${listName}Writer extends AbstractFieldWriter {
   
   public void write(ExtensionHolder var1) {
     writer.write(var1);
+    writer.setPosition(writer.idx() + 1);
   }
 
   <#list vv.types as type>
