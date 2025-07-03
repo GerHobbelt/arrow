@@ -1151,6 +1151,7 @@ class AsofJoinNode : public ExecNode {
       process_thread_.join();
     }
 #endif
+    process_task_.Wait();
   }
 
   const std::vector<col_index_t>& indices_of_on_key() { return indices_of_on_key_; }
@@ -1593,7 +1594,8 @@ AsofJoinNode::AsofJoinNode(ExecPlan* plan, NodeVector inputs,
 #ifdef ARROW_ENABLE_THREADING
       ,
       process_(),
-      process_thread_()
+      process_thread_(),
+      process_task_(Future<>::MakeFinished())
 #endif
 {
   for (auto& key_hasher : key_hashers_) {
