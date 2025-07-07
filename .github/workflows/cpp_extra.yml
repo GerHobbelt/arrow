@@ -27,6 +27,7 @@ on:
       - '.github/workflows/cpp_extra.yml'
       - 'ci/conda_env_*'
       - 'ci/docker/**'
+      - 'ci/scripts/ccache_setup.sh'
       - 'ci/scripts/cpp_*'
       - 'ci/scripts/install_azurite.sh'
       - 'ci/scripts/install_gcs_testbench.sh'
@@ -45,6 +46,7 @@ on:
       - '.github/workflows/cpp_extra.yml'
       - 'ci/conda_env_*'
       - 'ci/docker/**'
+      - 'ci/scripts/ccache_setup.sh'
       - 'ci/scripts/cpp_*'
       - 'ci/scripts/install_azurite.sh'
       - 'ci/scripts/install_gcs_testbench.sh'
@@ -85,7 +87,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           case "${GITHUB_EVENT_NAME}" in
-            push|workflow_dispatch)
+            push|schedule)
               ci_extra=true
               ;;
             pull_request)
@@ -114,6 +116,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - image: alpine-linux-cpp
+            runs-on: ubuntu-latest
+            title: AMD64 Alpine Linux
           - image: conda-cpp
             run-options: >-
               -e ARROW_USE_MESON=ON
@@ -122,7 +127,7 @@ jobs:
     env:
       ARCHERY_DEBUG: 1
       ARROW_ENABLE_TIMING_TESTS: OFF
-      # DOCKER_VOLUME_PREFIX: ".docker/"
+      DOCKER_VOLUME_PREFIX: ".docker/"
     steps:
       - name: Checkout Arrow
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

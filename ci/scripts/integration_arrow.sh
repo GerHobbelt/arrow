@@ -27,7 +27,7 @@ gold_dir=$arrow_dir/testing/data/arrow-ipc-stream/integration
 : ${ARROW_INTEGRATION_CPP:=ON}
 : ${ARROW_INTEGRATION_CSHARP:=ON}
 
-: ${ARCHERY_INTEGRATION_TARGET_IMPLEMENTATIONS:=cpp,csharp,js}
+: ${ARCHERY_INTEGRATION_TARGET_IMPLEMENTATIONS:=cpp,csharp}
 export ARCHERY_INTEGRATION_TARGET_IMPLEMENTATIONS
 
 . ${arrow_dir}/ci/scripts/util_log.sh
@@ -47,6 +47,7 @@ fi
 github_actions_group_end
 
 export ARROW_BUILD_ROOT=${build_dir}
+export ARROW_JS_ROOT=${build_dir}/js
 
 # Get more detailed context on crashes
 export PYTHONFAULTHANDLER=1
