@@ -350,7 +350,6 @@ class ThrottledAsyncTaskSchedulerImpl
                         weak_self = self->weak_from_this()](const Status& st) -> void {
                   if (auto self = weak_self.lock(); self && st.ok()) {
                     self->throttle_->Release(latched_cost);
-                    self->ContinueTasks();
                   }
                 };
               })) {
