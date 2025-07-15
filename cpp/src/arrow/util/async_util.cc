@@ -324,7 +324,7 @@ class ThrottledAsyncTaskSchedulerImpl
       return true;
     } else {
       lk.unlock();
-      return SubmitTask(std::move(task), latched_cost, /*in_continue=*/false);
+      return SubmitTask(std::move(task), latched_cost);
     }
   }
 
@@ -337,12 +337,12 @@ class ThrottledAsyncTaskSchedulerImpl
   const util::tracing::Span& span() const override { return target_->span(); }
 
  private:
-  bool SubmitTask(std::unique_ptr<Task> task, int latched_cost, bool in_continue) {
+  bool SubmitTask(std::unique_ptr<Task> task, int latched_cost) {
     // Wrap the task with a wrapper that runs it and then checks to see if there are any
     // queued tasks
     std::string_view name = task->name();
     return target_->AddSimpleTask(
-        [latched_cost, in_continue, inner_task = std::move(task),
+        [latched_cost, inner_task = std::move(task),
          self = shared_from_this()]() mutable -> Result<Future<>> {
           ARROW_ASSIGN_OR_RAISE(Future<> inner_fut, (*inner_task)());
           if (!inner_fut.TryAddCallback([&] {
@@ -357,9 +357,6 @@ class ThrottledAsyncTaskSchedulerImpl
             // if we are already running it so we can avoid stack overflow
             self->throttle_->Release(latched_cost);
             inner_task.reset();
-            if (!in_continue) {
-              self->ContinueTasks();
-            }
           }
           return inner_fut;
         },
@@ -390,7 +387,7 @@ class ThrottledAsyncTaskSchedulerImpl
       } else {
         std::unique_ptr<Task> next_task = queue_->Pop();
         lk.unlock();
-        if (!SubmitTask(std::move(next_task), next_cost, /*in_continue=*/true)) {
+        if (!SubmitTask(std::move(next_task), next_cost)) {
           return;
         }
         lk.lock();
