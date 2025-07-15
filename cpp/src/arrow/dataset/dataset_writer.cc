@@ -103,6 +103,20 @@ struct DatasetWriterState {
 
   bool StagingFull() const { return staged_rows_count.load() >= max_rows_staged; }
 
+  struct debugOp{
+    char origin{'-'};
+    char op{'-'};
+    uint64_t val=0;
+    std::shared_ptr<RecordBatch> batch;
+  };
+  int idx{0};
+  std::array<debugOp,128> debugLog_;
+
+  void debugLog(debugOp op){
+    debugLog_[idx++]=op;
+    idx%=128;
+  }
+
   // Throttle for how many rows the dataset writer will allow to be in process memory
   // When this is exceeded the dataset writer will pause / apply backpressure
   Throttle rows_in_flight_throttle;
@@ -246,6 +260,7 @@ class DatasetWriterFileQueue
         [self = shared_from_this(), batch = std::move(next)]() {
           int64_t rows_to_release = batch->num_rows();
           Status status = self->writer_->Write(batch);
+          self->writer_state_->debugLog({'n','R',rows_to_release,batch});
           self->writer_state_->rows_in_flight_throttle.Release(rows_to_release);
           return status;
         }));
@@ -679,6 +694,8 @@ class DatasetWriter::DatasetWriterImpl {
         }
         continue;
       }
+
+      writer_state_->debugLog({'d','A',next_chunk->num_rows(),batch});
       backpressure =
           writer_state_->rows_in_flight_throttle.Acquire(next_chunk->num_rows());
       if (!backpressure.is_finished()) {
@@ -689,6 +706,7 @@ class DatasetWriter::DatasetWriterImpl {
         backpressure = writer_state_->open_files_throttle.Acquire(1);
         if (!backpressure.is_finished()) {
           EVENT_ON_CURRENT_SPAN("DatasetWriter::Backpressure::TooManyOpenFiles");
+          writer_state_->debugLog({'d','R',next_chunk->num_rows(),batch});
           writer_state_->rows_in_flight_throttle.Release(next_chunk->num_rows());
           RETURN_NOT_OK(TryCloseLargestFile());
           break;
@@ -701,6 +719,7 @@ class DatasetWriter::DatasetWriterImpl {
         //
         // `open_files_throttle` will be handed by `DatasetWriterDirectoryQueue`
         // so we don't need to release it here.
+        writer_state_->debugLog({'e','R',next_chunk->num_rows(),batch});
         writer_state_->rows_in_flight_throttle.Release(next_chunk->num_rows());
         return s;
       }
