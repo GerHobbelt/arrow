@@ -540,6 +540,8 @@ Status FileSystemDataset::Write(const FileSystemDatasetWriteOptions& write_optio
   return acero::DeclarationToStatus(std::move(plan), scanner->options()->use_threads);
 }
 
+namespace {
+
 Result<acero::ExecNode*> MakeWriteNode(acero::ExecPlan* plan,
                                        std::vector<acero::ExecNode*> inputs,
                                        const acero::ExecNodeOptions& options) {
@@ -573,8 +575,6 @@ Result<acero::ExecNode*> MakeWriteNode(acero::ExecPlan* plan,
 
   return node;
 }
-
-namespace {
 
 class TeeNode : public acero::MapNode,
                 public arrow::acero::util::SerialSequencingQueue::Processor {
