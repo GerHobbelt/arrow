@@ -15,22 +15,25 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# The GPG key ID to sign artifacts. The GPG key ID must be registered
-# to both of the followings:
-#
-#   * https://dist.apache.org/repos/dist/release/arrow/KEYS
-#
-# See these files how to import your GPG key ID to these files.
-#
-# You must set this.
-#GPG_KEY_ID=08D3564B7C6A9CAFBFF6A66791D18FCF079F8007
+class TestArrayStatistics < Test::Unit::TestCase
+  def setup
+    data = Tempfile.create(["red-parquet", ".parquet"]) do |file|
+      table = Arrow::Table.new(int64: [nil, -(2 ** 32), 2 ** 32])
+      table.save(file)
+      File.read(file, mode: "rb")
+    end
+    loaded_table = Arrow::Table.load(Arrow::Buffer.new(data),
+                                     format: :parquet)
+    @statistics = loaded_table[:int64].data.chunks[0].statistics
+  end
 
-# The Artifactory API key to upload artifacts to Artifactory.
-#
-# You must set this.
-#ARTIFACTORY_API_KEY=secret
-
-# The GitHub token used in numerous release scripts.
-#
-# You must set this.
-#GH_TOKEN=secret
+  def test_distinct_count
+    assert do
+      not @statistics.has_distinct_count?
+    end
+    assert do
+      not @statistics.distinct_count_exact?
+    end
+    assert_nil(@statistics.distinct_count)
+  end
+end

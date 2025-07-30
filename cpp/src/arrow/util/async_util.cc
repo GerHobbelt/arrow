@@ -459,14 +459,14 @@ class AsyncTaskGroupImpl : public AsyncTaskGroup {
 
 }  // namespace
 
-Future<> AsyncTaskScheduler::Make(FnOnce<Status(AsyncTaskScheduler*)> initial_task,
-                                  FnOnce<void(const Status&)> abort_callback,
-                                  StopToken stop_token) {
+Future<> AsyncTaskScheduler::Make(
+    FnOnce<Status(std::shared_ptr<AsyncTaskScheduler>)> initial_task,
+    FnOnce<void(const Status&)> abort_callback, StopToken stop_token) {
   util::tracing::Span span;
   auto scope = START_SCOPED_SPAN_SV(span, "AsyncTaskScheduler::InitialTask"sv);
-  auto scheduler = std::make_unique<AsyncTaskSchedulerImpl>(std::move(stop_token),
+  auto scheduler = std::make_shared<AsyncTaskSchedulerImpl>(std::move(stop_token),
                                                             std::move(abort_callback));
-  Status initial_task_st = std::move(initial_task)(scheduler.get());
+  Status initial_task_st = std::move(initial_task)(scheduler);
   scheduler->OnTaskFinished(std::move(initial_task_st));
   // Keep scheduler alive until finished
   return scheduler->OnFinished().Then([scheduler = std::move(scheduler)] {});

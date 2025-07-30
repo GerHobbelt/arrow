@@ -127,10 +127,11 @@ struct ExecPlanImpl : public ExecPlan {
     // call.
     auto scope = START_SCOPED_SPAN(span_, "ExecPlan", {{"plan", ToString()}});
     Future<> scheduler_finished = arrow::util::AsyncTaskScheduler::Make(
-        [this](arrow::util::AsyncTaskScheduler* async_scheduler) {
+        [this](std::shared_ptr<arrow::util::AsyncTaskScheduler> async_scheduler) {
           QueryContext* ctx = query_context();
-          RETURN_NOT_OK(ctx->Init(async_scheduler));
 
+          RETURN_NOT_OK(ctx->Init(async_scheduler.get()));
+          async_scheduler_ = async_scheduler;
 #ifdef ARROW_WITH_OPENTELEMETRY
           if (HasMetadata()) {
             auto pairs = metadata().get()->sorted_pairs();
@@ -231,8 +232,8 @@ struct ExecPlanImpl : public ExecPlan {
         // If an error occurs during StopProducing then we submit a task to fail.  If we
         // have already aborted then this will be ignored.  This way the failing status
         // will get communicated to finished_.
-        query_context()->async_scheduler()->AddSimpleTask(
-            [st] { return st; }, "ExecPlan::StopProducingErrorReporter"sv);
+        async_scheduler_->AddSimpleTask([st] { return st; },
+                                        "ExecPlan::StopProducingErrorReporter"sv);
       }
     }
   }
@@ -341,6 +342,7 @@ struct ExecPlanImpl : public ExecPlan {
   arrow::util::tracing::Span span_;
   std::shared_ptr<const KeyValueMetadata> metadata_;
   QueryContext query_context_;
+  std::shared_ptr<arrow::util::AsyncTaskScheduler> async_scheduler_;
   // This field only exists for backwards compatibility.  Remove once the deprecated
   // ExecPlan::Make overloads have been removed.
   std::shared_ptr<ThreadPool> owned_thread_pool_;

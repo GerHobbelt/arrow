@@ -85,9 +85,9 @@ class DatasetWriterTestFixture : public testing::Test {
     };
     std::shared_ptr<FileFormat> format = std::make_shared<IpcFileFormat>();
     write_options_.file_write_options = format->DefaultWriteOptions();
-    scheduler_finished_ =
-        util::AsyncTaskScheduler::Make([&](util::AsyncTaskScheduler* scheduler) {
-          scheduler_ = scheduler;
+    scheduler_finished_ = util::AsyncTaskScheduler::Make(
+        [&](std::shared_ptr<util::AsyncTaskScheduler> scheduler) {
+          scheduler_ = scheduler.get();
           scheduler->AddSimpleTask(
               [&] { return test_done_with_tasks_; },
               "DatasetWriterTestFixture::WaitForTestMethodToFinish"sv);
@@ -233,7 +233,7 @@ class DatasetWriterTestFixture : public testing::Test {
   util::AsyncTaskScheduler* scheduler_;
   Future<> scheduler_finished_;
   FileSystemDatasetWriteOptions write_options_;
-  bool paused_{false};
+  std::atomic_bool paused_{false};
   uint64_t counter_ = 0;
 };
 
@@ -277,6 +277,9 @@ TEST_F(DatasetWriterTestFixture, BatchGreaterThanMaxRowsQueued) {
 }
 
 TEST_F(DatasetWriterTestFixture, BatchWriteConcurrent) {
+#ifndef ARROW_ENABLE_THREADING
+  GTEST_SKIP() << "Test requires threading support";
+#endif
   auto dataset_writer = MakeDatasetWriter(/*max_rows=*/5);
 
   for (int threads = 1; threads < 5; threads++) {
@@ -289,7 +292,7 @@ TEST_F(DatasetWriterTestFixture, BatchWriteConcurrent) {
               while (paused_) {
                 SleepABit();
               }
-              dataset_writer->WriteRecordBatch(MakeBatch(batch + i + 10 * j), "");
+              dataset_writer->WriteRecordBatch(MakeBatch(0, batch + i + 10 * j), "");
             }
           }));
         }

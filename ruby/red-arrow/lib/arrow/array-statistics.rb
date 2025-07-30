@@ -15,22 +15,18 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# The GPG key ID to sign artifacts. The GPG key ID must be registered
-# to both of the followings:
-#
-#   * https://dist.apache.org/repos/dist/release/arrow/KEYS
-#
-# See these files how to import your GPG key ID to these files.
-#
-# You must set this.
-#GPG_KEY_ID=08D3564B7C6A9CAFBFF6A66791D18FCF079F8007
-
-# The Artifactory API key to upload artifacts to Artifactory.
-#
-# You must set this.
-#ARTIFACTORY_API_KEY=secret
-
-# The GitHub token used in numerous release scripts.
-#
-# You must set this.
-#GH_TOKEN=secret
+module Arrow
+  class ArrayStatistics
+    if method_defined?(:distinct_count_exact)
+      alias_method :distinct_count_raw, :distinct_count
+      def distinct_count
+        return nil unless has_distinct_count?
+        if distinct_count_exact?
+          distinct_count_exact
+        else
+          distinct_count_approximate
+        end
+      end
+    end
+  end
+end

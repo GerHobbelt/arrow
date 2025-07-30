@@ -198,7 +198,7 @@ class ARROW_EXPORT AsyncTaskScheduler {
   /// \return A future that will be completed when the initial task and all subtasks have
   ///         finished.
   static Future<> Make(
-      FnOnce<Status(AsyncTaskScheduler*)> initial_task,
+      FnOnce<Status(std::shared_ptr<AsyncTaskScheduler>)> initial_task,
       FnOnce<void(const Status&)> abort_callback = [](const Status&) {},
       StopToken stop_token = StopToken::Unstoppable());
 
