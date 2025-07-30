@@ -85,9 +85,9 @@ class DatasetWriterTestFixture : public testing::Test {
     };
     std::shared_ptr<FileFormat> format = std::make_shared<IpcFileFormat>();
     write_options_.file_write_options = format->DefaultWriteOptions();
-    scheduler_finished_ =
-        util::AsyncTaskScheduler::Make([&](util::AsyncTaskScheduler* scheduler) {
-          scheduler_ = scheduler;
+    scheduler_finished_ = util::AsyncTaskScheduler::Make(
+        [&](std::shared_ptr<util::AsyncTaskScheduler> scheduler) {
+          scheduler_ = scheduler.get();
           scheduler->AddSimpleTask(
               [&] { return test_done_with_tasks_; },
               "DatasetWriterTestFixture::WaitForTestMethodToFinish"sv);
