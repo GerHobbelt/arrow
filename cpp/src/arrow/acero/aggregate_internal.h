@@ -293,13 +293,11 @@ class GroupByNode : public ExecNode, public TracedNode {
   }
 
   void PauseProducing(ExecNode* output, int32_t counter) override {
-    // TODO(ARROW-16260)
-    // Without spillover there is no way to handle backpressure in this node
+    inputs_[0]->PauseProducing(this, counter);
   }
 
   void ResumeProducing(ExecNode* output, int32_t counter) override {
-    // TODO(ARROW-16260)
-    // Without spillover there is no way to handle backpressure in this node
+    inputs_[0]->ResumeProducing(this, counter);
   }
 
   Status StopProducingImpl() override { return Status::OK(); }
