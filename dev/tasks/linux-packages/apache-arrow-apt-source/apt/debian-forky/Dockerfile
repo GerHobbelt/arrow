@@ -15,24 +15,27 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Requirements for building the documentation
-breathe
-cython>3.1.1
-doxygen
-ipython
-linkify-it-py
-# We can't install linuxdoc by conda. We install linuxdoc by pip in
-# ci/dockerfiles/conda-python-pandas.dockerfile.
-# linuxdoc
-myst-parser
-numpydoc
-pydata-sphinx-theme=0.16
-sphinx-autobuild
-sphinx-design
-sphinx-copybutton
-sphinx-lint
-sphinxcontrib-jquery
-sphinxcontrib-mermaid
-sphinx
-pytest-cython
-pandas
+FROM debian:forky
+
+RUN \
+  echo "debconf debconf/frontend select Noninteractive" | \
+    debconf-set-selections
+
+RUN \
+  echo 'APT::Install-Recommends "false";' > \
+    /etc/apt/apt.conf.d/disable-install-recommends
+
+ARG DEBUG
+
+RUN \
+  quiet=$([ "${DEBUG}" = "yes" ] || echo "-qq") && \
+  apt update ${quiet} && \
+  apt install -y -V ${quiet} \
+    base-files \
+    build-essential \
+    debhelper \
+    devscripts \
+    fakeroot \
+    gnupg \
+    lsb-release && \
+  apt clean

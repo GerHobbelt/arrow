@@ -15,24 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Requirements for building the documentation
-breathe
-cython>3.1.1
-doxygen
-ipython
-linkify-it-py
-# We can't install linuxdoc by conda. We install linuxdoc by pip in
-# ci/dockerfiles/conda-python-pandas.dockerfile.
-# linuxdoc
-myst-parser
-numpydoc
-pydata-sphinx-theme=0.16
-sphinx-autobuild
-sphinx-design
-sphinx-copybutton
-sphinx-lint
-sphinxcontrib-jquery
-sphinxcontrib-mermaid
-sphinx
-pytest-cython
-pandas
+project('rapidjson', 'cpp')
+
+rapidjson_dep = declare_dependency(include_directories: 'include')
