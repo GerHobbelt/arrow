@@ -925,7 +925,7 @@ class PushGenerator {
 
   struct StateWithBackpressure : public State {
     explicit StateWithBackpressure(acero::BackpressureHandler handler)
-        : handler_(handler) {}
+        : handler_(std::move(handler)) {}
 
     struct DoHandle {
       explicit DoHandle(StateWithBackpressure& state)
@@ -944,13 +944,13 @@ class PushGenerator {
 
     bool Push(Result<T> result) override {
       auto lock = State::mutex.Lock();
-      DoHandle(*this);
-      return PushUnlocked(std::move(result), std::move(lock));
+      DoHandle do_handle(*this);
+      return State::PushUnlocked(std::move(result), std::move(lock));
     }
 
     Future<T> Pop() override {
       auto lock = State::mutex.Lock();
-      DoHandle(*this);
+      DoHandle do_handle(*this);
       return State::PopUnlocked();
     }
 
