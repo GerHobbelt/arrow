@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "arrow/acero/accumulation_queue.h"
+#include "arrow/acero/backpressure.h"
 #include "arrow/acero/concurrent_queue.h"
 #include "arrow/acero/exec_plan.h"
 #include "arrow/acero/exec_plan_internal.h"
@@ -85,21 +86,6 @@ using col_index_t = int;
 
 constexpr bool kNewTask = true;
 constexpr bool kPoisonPill = false;
-
-class BackpressureController : public BackpressureControl {
- public:
-  BackpressureController(ExecNode* node, ExecNode* output,
-                         std::atomic<int32_t>& backpressure_counter)
-      : node_(node), output_(output), backpressure_counter_(backpressure_counter) {}
-
-  void Pause() override { node_->PauseProducing(output_, ++backpressure_counter_); }
-  void Resume() override { node_->ResumeProducing(output_, ++backpressure_counter_); }
-
- private:
-  ExecNode* node_;
-  ExecNode* output_;
-  std::atomic<int32_t>& backpressure_counter_;
-};
 
 /// InputState corresponds to an input. Input record batches are queued up in InputState
 /// until processed and turned into output record batches.
