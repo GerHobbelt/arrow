@@ -28,7 +28,7 @@
 
 #include "arrow/acero/accumulation_queue.h"
 #include "arrow/acero/backpressure.h"
-#include "arrow/acero/concurrent_queue_internal.h"
+#include "arrow/acero/concurrent_queue.h"
 #include "arrow/acero/exec_plan.h"
 #include "arrow/acero/exec_plan_internal.h"
 #include "arrow/acero/options.h"
