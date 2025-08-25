@@ -235,7 +235,7 @@ Status ScalarAggregateNode::Init() {
     std::unique_ptr<arrow::acero::BackpressureControl> backpressure_control =
         std::make_unique<BackpressureController>(inputs_[0], this);
     ARROW_ASSIGN_OR_RAISE(auto handler,
-                          BackpressureHandler::Make(this, low_threshold, high_threshold,
+                          BackpressureHandler::Make(low_threshold, high_threshold,
                                                     std::move(backpressure_control)));
 
     processor_ = acero::util::SerialSequencingQueue::Processor::MakeBackpressureWrapper(
