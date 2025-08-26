@@ -15,8 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "arrow/util/align_util.h"
+// clang-format off
+// (prevent include reordering)
 #include "arrow/util/windows_compatibility.h"
+// clang-format on
+
+#include "arrow/util/align_util.h"
 
 #include "arrow/array.h"
 #include "arrow/chunked_array.h"
