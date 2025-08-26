@@ -85,7 +85,7 @@ Status GroupByNode::Init() {
 
     constexpr size_t low_threshold = 4, high_threshold = 8;
     ARROW_ASSIGN_OR_RAISE(auto handler, BackpressureHandler::Make(
-                                            this, low_threshold, high_threshold,
+                                            low_threshold, high_threshold,
                                             std::move(backpressure_source_sequencer_)));
 
     processor_ = acero::util::SerialSequencingQueue::Processor::MakeBackpressureWrapper(
