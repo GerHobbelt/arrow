@@ -284,6 +284,12 @@ if(CXX_LINKER_SUPPORTS_VERSION_SCRIPT)
       "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/symbols.map")
 endif()
 
+if(ARROW_BUILD_STATIC)
+  set(ARROW_UTIL_LIB arrow_static)
+else()
+  set(ARROW_UTIL_LIB arrow_shared)
+endif()
+
 add_arrow_lib(parquet
               CMAKE_PACKAGE_NAME
               Parquet
@@ -300,7 +306,7 @@ add_arrow_lib(parquet
               SHARED_PRIVATE_LINK_LIBS
               ${PARQUET_SHARED_PRIVATE_LINK_LIBS}
               SHARED_INSTALL_INTERFACE_LIBS
-              Arrow::arrow_shared
+              ${ARROW_UTIL_LIB}
               STATIC_LINK_LIBS
               ${PARQUET_STATIC_LINK_LIBS}
               STATIC_INSTALL_INTERFACE_LIBS
