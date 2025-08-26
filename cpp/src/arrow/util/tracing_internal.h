@@ -129,7 +129,7 @@ opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span>& UnwrapSpan(
 const opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span>& UnwrapSpan(
     const ::arrow::util::tracing::SpanDetails* span);
 
-opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span>& RewrapSpan(
+ARROW_EXPORT opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span>& RewrapSpan(
     ::arrow::util::tracing::SpanDetails* span,
     opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> ot_span);
 
