@@ -14,8 +14,8 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
 #include "arrow/util/tracing.h"
+#include "arrow/util/windows_compatibility.h"
 
 #include "arrow/util/config.h"
 #include "arrow/util/tracing_internal.h"

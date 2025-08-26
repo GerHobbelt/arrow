@@ -16,6 +16,7 @@
 // under the License.
 
 #include "arrow/util/align_util.h"
+#include "arrow/util/windows_compatibility.h"
 
 #include "arrow/array.h"
 #include "arrow/chunked_array.h"
