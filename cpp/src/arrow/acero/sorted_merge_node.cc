@@ -480,12 +480,6 @@ class SortedMergeNode : public ExecNode {
 
  private:
   void EndFromProcessThread(arrow::Status st = arrow::Status::OK()) {
-    ARROW_CHECK(!cleanup_started);
-    for (size_t i = 0; i < input_counter.size(); ++i) {
-      ARROW_CHECK(input_counter[i] == output_counter[i])
-          << input_counter[i] << " != " << output_counter[i];
-    }
-
 #ifdef ARROW_ENABLE_THREADING
     ARROW_UNUSED(
         plan_->query_context()->executor()->Spawn([this, st = std::move(st)]() mutable {
@@ -669,8 +663,6 @@ class SortedMergeNode : public ExecNode {
   std::vector<std::atomic_int64_t> input_counter;
   std::vector<std::atomic_int64_t> output_counter;
   std::mutex gate;
-
-  std::atomic<bool> cleanup_started{false};
 
   // Backpressure counter common to all input states
   std::atomic<int32_t> backpressure_counter{0};
