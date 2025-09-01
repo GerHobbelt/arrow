@@ -39,7 +39,7 @@ using internal::checked_cast;
 
 namespace acero {
 
-namespace {
+// namespace {
 
 struct PipeSourceNode : public PipeSource, public ExecNode {
   PipeSourceNode(ExecPlan* plan, std::shared_ptr<Schema> schema, std::string pipe_name,
@@ -231,7 +231,7 @@ class PipeTeeNode : public PipeSource, public PipeSinkNode {
 
 const char PipeTeeNode::kKindName[] = "PipeTeeNode";
 
-}  // namespace
+//}  // namespace
 
 PipeSource::PipeSource() {}
 Status PipeSource::Initialize(Pipe* pipe) {
