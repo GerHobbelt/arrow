@@ -27,6 +27,44 @@
 
 namespace arrow {
 
+namespace internal {
+
+template <typename... Ts>
+struct make_void {
+  using type = void;
+};
+
+template <typename... Ts>
+using void_t = typename make_void<Ts...>::type;
+
+template <typename T, typename = void>
+struct is_optional_like : public std::false_type {};
+
+template <typename T, typename = void>
+struct is_dereferencable : public std::false_type {};
+
+template <typename T>
+struct is_dereferencable<T, arrow::internal::void_t<decltype(*std::declval<T>())>>
+    : public std::true_type {};
+
+template <typename T>
+struct is_optional_like<
+    T, typename std::enable_if<
+           std::is_constructible<bool, T>::value && is_dereferencable<T>::value &&
+           !std::is_array<typename std::remove_reference<T>::type>::value>::type>
+    : public std::true_type {};
+
+template <typename T, typename Enable = void>
+struct has_type_singleton : std::false_type {};
+template <typename T>
+struct has_type_singleton<T, void_t<decltype(T::type_singleton)>> : std::true_type {};
+
+}  // namespace internal
+
+template <typename T, typename R = void>
+using enable_if_optional_like =
+    typename std::enable_if<internal::is_optional_like<T>::value, R>::type;
+
 //
 // Per-type id type lookup
 //
@@ -98,7 +136,7 @@ struct TypeTraits {};
 
 /// \brief Base template for type traits of C++ types
 /// \tparam T A standard C++ type
-template <typename T>
+template <typename T, typename Enable = void>
 struct CTypeTraits {};
 
 /// \addtogroup type-traits
@@ -535,24 +573,73 @@ struct TypeTraits<FixedSizeListType> {
 };
 /// @}
 
+namespace internal {
+
+template <typename T, typename Enable = void>
+struct nested_has_type_singleton_impl : std::false_type {};
+template <typename T>
+struct nested_has_type_singleton_impl<T, std::enable_if_t<is_optional_like<T>::value>>
+    : has_type_singleton<
+          CTypeTraits<typename std::decay<decltype(*std::declval<T>())>::type>> {};
+template <typename T>
+struct nested_has_type_singleton_impl<T, std::enable_if_t<!is_optional_like<T>::value>>
+    : has_type_singleton<CTypeTraits<T>> {};
+
+}  // namespace internal
+
+template <typename T, typename R = void>
+using nested_has_type_singleton = typename internal::nested_has_type_singleton_impl<T, R>;
+
 /// \addtogroup c-type-traits
 template <typename CType>
-struct CTypeTraits<std::vector<CType>> : public TypeTraits<ListType> {
+struct CTypeTraits<std::vector<CType>,
+                   std::enable_if_t<nested_has_type_singleton<CType>::value>>
+    : public TypeTraits<ListType> {
   using ArrowType = ListType;
+  static auto type_singleton() {
+    if constexpr (internal::is_optional_like<CType>::value) {
+      using OptionalInnerType =
+          typename std::decay<decltype(*std::declval<CType>())>::type;
+      return list(CTypeTraits<OptionalInnerType>::type_singleton());
+    } else {
+      return list(field("item", CTypeTraits<CType>::type_singleton(), false));
+    }
+  }
+};
 
-  static inline std::shared_ptr<DataType> type_singleton() {
-    return list(CTypeTraits<CType>::type_singleton());
+/// \addtogroup c-type-traits
+template <typename CType>
+struct CTypeTraits<std::vector<CType>,
+                   std::enable_if_t<!nested_has_type_singleton<CType>::value>>
+    : public TypeTraits<ListType> {
+  using ArrowType = ListType;
+};
+
+/// \addtogroup c-type-traits
+template <typename CType, std::size_t N>
+struct CTypeTraits<std::array<CType, N>,
+                   std::enable_if_t<nested_has_type_singleton<CType>::value>>
+    : public TypeTraits<FixedSizeListType> {
+  using ArrowType = FixedSizeListType;
+
+  static auto type_singleton() {
+    if constexpr (internal::is_optional_like<CType>::value) {
+      using OptionalInnerType =
+          typename std::decay<decltype(*std::declval<CType>())>::type;
+      return fixed_size_list(CTypeTraits<OptionalInnerType>::type_singleton(), N);
+    } else {
+      return fixed_size_list(field("item", CTypeTraits<CType>::type_singleton(), false),
+                             N);
+    }
   }
 };
 
 /// \addtogroup c-type-traits
 template <typename CType, std::size_t N>
-struct CTypeTraits<std::array<CType, N>> : public TypeTraits<FixedSizeListType> {
+struct CTypeTraits<std::array<CType, N>,
+                   std::enable_if_t<!nested_has_type_singleton<CType>::value>>
+    : public TypeTraits<FixedSizeListType> {
   using ArrowType = FixedSizeListType;
-
-  static auto type_singleton() {
-    return fixed_size_list(CTypeTraits<CType>::type_singleton(), N);
-  }
 };
 
 /// \addtogroup type-traits
@@ -595,18 +682,6 @@ struct TypeTraits<ExtensionType> {
   constexpr static bool is_parameter_free = false;
 };
 /// @}
-
-namespace internal {
-
-template <typename... Ts>
-struct make_void {
-  using type = void;
-};
-
-template <typename... Ts>
-using void_t = typename make_void<Ts...>::type;
-
-}  // namespace internal
 
 //
 // Useful type predicates
