@@ -127,12 +127,14 @@ struct ConversionTraits<std::string> : public CTypeTraits<std::string> {
 template <typename ValueCType, typename ListBuilderType, typename Range>
 Status AppendCellRange(ListBuilderType& builder, Range&& cell_range) {
   constexpr bool is_list_builder = std::is_same<ListBuilderType, ListBuilder>::value;
+  constexpr bool is_fixed_size_list_builder =
+      std::is_same<ListBuilderType, FixedSizeListBuilder>::value;
   constexpr bool is_large_list_builder =
       std::is_same<ListBuilderType, LargeListBuilder>::value;
-  static_assert(
-      is_list_builder || is_large_list_builder,
-      "Builder type must be either ListBuilder or LargeListBuilder for appending "
-      "multiple rows.");
+  static_assert(is_list_builder || is_large_list_builder || is_fixed_size_list_builder,
+                "Builder type must be either ListBuilder, LargeListBuilder or "
+                "FixedSizeListBuilder for appending "
+                "multiple rows.");
 
   using ChildBuilderType = CBuilderType<ValueCType>;
   ARROW_RETURN_NOT_OK(builder.Append());
@@ -171,11 +173,7 @@ struct ConversionTraits<std::array<ValueCType, N>>
     : public CTypeTraits<std::array<ValueCType, N>> {
   static arrow::Status AppendRow(FixedSizeListBuilder& builder,
                                  const std::array<ValueCType, N>& values) {
-    auto vb =
-        ::arrow::internal::checked_cast<typename CTypeTraits<ValueCType>::BuilderType*>(
-            builder.value_builder());
-    ARROW_RETURN_NOT_OK(builder.Append());
-    return vb->AppendValues(values.data(), N);
+    return AppendCellRange<ValueCType>(builder, values);
   }
 
   static std::array<ValueCType, N> GetEntry(const ::arrow::FixedSizeListArray& array,
@@ -201,6 +199,7 @@ struct ConversionTraits<Optional, enable_if_optional_like<Optional>>
   using OptionalInnerType =
       typename std::decay<decltype(*std::declval<Optional>())>::type;
   using typename CTypeTraits<OptionalInnerType>::ArrowType;
+  using typename CTypeTraits<OptionalInnerType>::ArrayType;
   using CTypeTraits<OptionalInnerType>::type_singleton;
 
   static Status AppendRow(typename TypeTraits<ArrowType>::BuilderType& builder,
