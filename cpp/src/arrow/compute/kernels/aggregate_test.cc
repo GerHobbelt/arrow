@@ -4106,6 +4106,7 @@ class TestRandomQuantileKernel : public TestPrimitiveQuantileKernel<ArrowType> {
     VerifyTDigest(chunked, quantiles);
     VerifyTDigestMapQuantile(chunked, quantiles);
     VerifyTDigestMapReduceQuantile(chunked, quantiles);
+    VerifyTDigestMapReduceIncrementalQuantile(chunked, quantiles);
   }
 
   void CheckTDigestsSliced(const std::vector<int>& chunk_sizes, int64_t num_quantiles) {
@@ -4124,6 +4125,7 @@ class TestRandomQuantileKernel : public TestPrimitiveQuantileKernel<ArrowType> {
       VerifyTDigest(chunked->Slice(os[0], os[1]), quantiles);
       VerifyTDigestMapQuantile(chunked->Slice(os[0], os[1]), quantiles);
       VerifyTDigestMapReduceQuantile(chunked->Slice(os[0], os[1]), quantiles);
+      VerifyTDigestMapReduceIncrementalQuantile(chunked->Slice(os[0], os[1]), quantiles);
     }
   }
 
@@ -4193,8 +4195,51 @@ class TestRandomQuantileKernel : public TestPrimitiveQuantileKernel<ArrowType> {
       map_chunks.push_back(std::move(map_chunk));
     }
     auto map_chunked = std::make_shared<ChunkedArray>(std::move(map_chunks));
+    ASSERT_OK_AND_ASSIGN(Datum reduced, TDigestReduce(map_chunked));
     TDigestQuantileOptions options(quantiles);
-    ASSERT_OK_AND_ASSIGN(Datum out, TDigestQuantile(map_chunked, options));
+
+    ASSERT_OK_AND_ASSIGN(Datum out_alternative, TDigestQuantile(map_chunked, options));
+    ASSERT_OK_AND_ASSIGN(Datum out, TDigestQuantile(reduced, options));
+    ASSERT_EQ(out, out_alternative);
+    const auto& out_array = out.make_array();
+    ValidateOutput(*out_array);
+    ASSERT_EQ(out_array->length(), quantiles.size());
+    ASSERT_EQ(out_array->null_count(), 0);
+    AssertTypeEqual(out_array->type(), float64());
+
+    // linear interpolated exact quantile as reference
+    std::vector<std::vector<Datum>> exact =
+        NaiveQuantile(*chunked, quantiles, {QuantileOptions::LINEAR});
+    const double* approx = out_array->data()->GetValues<double>(1);
+    for (size_t i = 0; i < quantiles.size(); ++i) {
+      const auto& exact_scalar = checked_pointer_cast<DoubleScalar>(exact[i][0].scalar());
+      const double tolerance = std::fabs(exact_scalar->value) * 0.05;
+      EXPECT_NEAR(approx[i], exact_scalar->value, tolerance) << quantiles[i];
+    }
+  }
+
+  void VerifyTDigestMapReduceIncrementalQuantile(
+      const std::shared_ptr<ChunkedArray>& chunked, std::vector<double>& quantiles) {
+    Datum out;
+    TDigestQuantileOptions options(quantiles);
+    std::shared_ptr<Scalar> incremental_centroids;
+    for (const auto& chunk : chunked->chunks()) {
+      ASSERT_OK_AND_ASSIGN(Datum centroids, TDigestMap(chunk));
+      if (incremental_centroids) {
+        // Is there a nicer way to make array from scalars?
+        ASSERT_OK_AND_ASSIGN(auto chunk1, MakeArrayFromScalar(*centroids.scalar(), 1));
+        ASSERT_OK_AND_ASSIGN(auto chunk2, MakeArrayFromScalar(*incremental_centroids, 1));
+        auto map_chunked = std::make_shared<ChunkedArray>(ArrayVector{chunk1, chunk2});
+        ASSERT_OK_AND_ASSIGN(Datum reduced, TDigestReduce(map_chunked));
+        incremental_centroids = reduced.scalar();
+      } else {
+        incremental_centroids = centroids.scalar();
+      }
+
+      ASSERT_OK_AND_ASSIGN(
+          out, TDigestQuantile(incremental_centroids, options));  // incremental quantile
+    }
+
     const auto& out_array = out.make_array();
     ValidateOutput(*out_array);
     ASSERT_EQ(out_array->length(), quantiles.size());
@@ -4514,8 +4559,8 @@ TEST(TestTDigestMapKernel, Options) {
   auto output_type =
       struct_({field("mean", fixed_size_list(float64(), 5), false),
                field("weight", fixed_size_list(float64(), 5), false),
-               field("count", uint64(), false), field("min", float64(), true),
-               field("max", float64(), true)});
+               field("min", float64(), true), field("max", float64(), true),
+               field("count", uint64(), false)});
   TDigestMapOptions keep_nulls(/*delta=*/5, /*buffer_size=*/500,
                                /*skip_nulls=*/false,
                                /*scaler=*/TDigestMapOptions::Scaler::K0);
@@ -4527,31 +4572,31 @@ TEST(TestTDigestMapKernel, Options) {
       TDigestMap(ArrayFromJSON(input_type, "[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]"), keep_nulls),
       ResultWith(ScalarFromJSON(output_type,
                                 "{\"mean\":[1.5, 3.5, 5.5, null, null],\"weight\":[2, 2, "
-                                "2, null, null],\"count\":6,\"min\":1.0,\"max\":6.0}")));
+                                "2, null, null],\"min\":1.0,\"max\":6.0,\"count\":6}")));
   EXPECT_THAT(
       TDigestMap(ArrayFromJSON(input_type, "[1.0, 2.0, 3.0, 4.0, 5.0]"), keep_nulls),
       ResultWith(ScalarFromJSON(output_type,
                                 "{\"mean\":[1.5, 3.5, 5.0, null, null],\"weight\":[2, 2, "
-                                "1, null, null],\"count\":5,\"min\":1.0,\"max\":5.0}")));
+                                "1, null, null],\"min\":1.0,\"max\":5.0,\"count\":5}")));
   EXPECT_THAT(
       TDigestMap(ArrayFromJSON(input_type, "[1.0, 2.0, 3.0, 4.0]"), keep_nulls),
       ResultWith(ScalarFromJSON(
           output_type,
           "{\"mean\":[1.0, 2.0, 3.0, 4.0, "
-          "null],\"weight\":[1,1,1,1,null],\"count\":4,\"min\":1.0,\"max\":4.0}")));
+          "null],\"weight\":[1,1,1,1,null],\"min\":1.0,\"max\":4.0,\"count\":4}")));
 
   EXPECT_THAT(
       TDigestMap(ArrayFromJSON(input_type, "[1.0, 2.0, 3.0]"), keep_nulls),
       ResultWith(ScalarFromJSON(output_type,
                                 "{\"mean\":[1.0,2.0,3.0,null,null],\"weight\":[1,"
-                                "1,1,null,null],\"count\":3,\"min\":1.0,\"max\":3.0}")));
+                                "1,1,null,null],\"min\":1.0,\"max\":3.0,\"count\":3}")));
   EXPECT_THAT(TDigestMap(ArrayFromJSON(input_type, "[1.0, 2.0, 3.0, null]"), keep_nulls),
               ResultWith(ScalarFromJSON(output_type, "null")));
   EXPECT_THAT(TDigestMap(ScalarFromJSON(input_type, "1.0"), keep_nulls),
               ResultWith(ScalarFromJSON(
                   output_type,
                   "{\"mean\":[1.0,null,null,null,null],\"weight\":["
-                  "1,null,null,null,null],\"count\":1,\"min\":1.0,\"max\":1.0}")));
+                  "1,null,null,null,null],\"min\":1.0,\"max\":1.0,\"count\":1}")));
   EXPECT_THAT(TDigestMap(ScalarFromJSON(input_type, "null"), keep_nulls),
               ResultWith(ScalarFromJSON(output_type, "null")));
 
@@ -4559,61 +4604,60 @@ TEST(TestTDigestMapKernel, Options) {
       TDigestMap(ArrayFromJSON(input_type, "[1.0, 2.0, 3.0, null]"), skip_nulls),
       ResultWith(ScalarFromJSON(output_type,
                                 "{\"mean\":[1.0,2.0,3.0,null,null],\"weight\":[1,"
-                                "1,1,null,null],\"count\":3,\"min\":1.0,\"max\":3.0}")));
+                                "1,1,null,null],\"min\":1.0,\"max\":3.0,\"count\":3}")));
   EXPECT_THAT(TDigestMap(ArrayFromJSON(input_type, "[1.0, 2.0, null]"), skip_nulls),
               ResultWith(ScalarFromJSON(
                   output_type,
                   "{\"mean\":[1.0,2.0,null,null,null],\"weight\":["
-                  "1,1,null,null,null],\"count\":2,\"min\":1.0,\"max\":2.0}")));
+                  "1,1,null,null,null],\"min\":1.0,\"max\":2.0,\"count\":2}")));
   EXPECT_THAT(TDigestMap(ScalarFromJSON(input_type, "1.0"), skip_nulls),
               ResultWith(ScalarFromJSON(
                   output_type,
                   "{\"mean\":[1.0,null,null,null,null],\"weight\":["
-                  "1,null,null,null,null],\"count\":1,\"min\":1.0,\"max\":1.0}")));
+                  "1,null,null,null,null],\"min\":1.0,\"max\":1.0,\"count\":1}")));
   EXPECT_THAT(TDigestMap(ScalarFromJSON(input_type, "null"), skip_nulls),
               ResultWith(ScalarFromJSON(
                   output_type,
                   "{\"mean\":[null,null,null,null,null],\"weight\":"
-                  "[null,null,null,null,null],\"count\":0,\"min\":null,\"max\":null}")));
+                  "[null,null,null,null,null],\"min\":null,\"max\":null,\"count\":0}")));
 }
 
 TEST(TestTDigestReduceKernel, Basic) {
   auto type = struct_({field("mean", fixed_size_list(float64(), 5), false),
                        field("weight", fixed_size_list(float64(), 5), false),
-                       field("count", uint64(), false), field("min", float64(), true),
-                       field("max", float64(), true)});
+                       field("min", float64(), true), field("max", float64(), true),
+                       field("count", uint64(), false)});
   TDigestReduceOptions options(/*scaler=*/TDigestMapOptions::Scaler::K0);
   EXPECT_THAT(
       TDigestReduce(
           ArrayFromJSON(type,
                         "["
                         "{\"mean\":[1.5, 3.5, 5.5, null, null],\"weight\":[2, "
-                        "2, 2, null, null],\"count\":6,\"min\":1.0,\"max\":6.0},"
+                        "2, 2, null, null],\"min\":1.0,\"max\":6.0,\"count\":6},"
                         "{\"mean\":[1.5, 3.5, 5.5, null, null],\"weight\":[2, "
-                        "2, 2, null, null],\"count\":6,\"min\":1.0,\"max\":6.0}"
+                        "2, 2, null, null],\"min\":1.0,\"max\":6.0,\"count\":6}"
                         "]"),
           options),
       ResultWith(ScalarFromJSON(type,
                                 "{\"mean\":[1.5, 3.5, 5.5, null, null],\"weight\":[4, 4, "
-                                "4, null, null],\"count\":12,\"min\":1.0,\"max\":6.0}")));
+                                "4, null, null],\"min\":1.0,\"max\":6.0,\"count\":12}")));
 
   EXPECT_THAT(
       TDigestReduce(
           ScalarFromJSON(type,
                          "{\"mean\":[1.5, 3.5, 5.5, null, null],\"weight\":[2, "
-                         "2, 2, null, null],\"count\":6,\"min\":1.0,\"max\":6.0}"),
+                         "2, 2, null, null],\"min\":1.0,\"max\":6.0,\"count\":6}"),
           options),
       ResultWith(ScalarFromJSON(type,
                                 "{\"mean\":[1.5, 3.5, 5.5, null, null],\"weight\":[2, 2, "
-                                "2, null, null],\"count\":6,\"min\":1.0,\"max\":6.0}")));
+                                "2, null, null],\"min\":1.0,\"max\":6.0,\"count\":6}")));
 }
 
 TEST(TestTDigestQuantileKernel, Basic) {
-  auto input_type =
-      struct_({field("mean", fixed_size_list(float64(), 5), false),
-               field("weight", fixed_size_list(float64(), 5), false),
-               field("count", uint64(), false), field("min", float64(), true),
-               field("max", float64(), true)});
+  auto input_type = struct_({field("mean", fixed_size_list(float64(), 5), false),
+                             field("weight", fixed_size_list(float64(), 5), false),
+                             field("min", float64(), true), field("max", float64(), true),
+                             field("count", uint64(), false)});
 
   auto output_type = float64();
 
@@ -4621,9 +4665,9 @@ TEST(TestTDigestQuantileKernel, Basic) {
       ArrayFromJSON(input_type,
                     "["
                     "{\"mean\":[1.5, 3.5, 5.5, null, null],\"weight\":[2, "
-                    "2, 2, null, null],\"count\":6,\"min\":1.0,\"max\":6.0},"
+                    "2, 2, null, null],\"min\":1.0,\"max\":6.0,\"count\":6},"
                     "{\"mean\":[1.5, 3.5, 5.5, null, null],\"weight\":[2, "
-                    "2, 2, null, null],\"count\":6,\"min\":1.0,\"max\":6.0}"
+                    "2, 2, null, null],\"min\":1.0,\"max\":6.0,\"count\":6}"
                     "]");
 
   TDigestQuantileOptions multiple(/*q=*/{0.1, 0.5, 0.9}, /*min_count=*/12);
@@ -4636,11 +4680,10 @@ TEST(TestTDigestQuantileKernel, Basic) {
 }
 
 TEST(TestTDigestMapReduceQuantileKernel, Basic) {
-  auto input_type =
-      struct_({field("mean", fixed_size_list(float64(), 5), false),
-               field("weight", fixed_size_list(float64(), 5), false),
-               field("count", uint64(), false), field("min", float64(), true),
-               field("max", float64(), true)});
+  auto input_type = struct_({field("mean", fixed_size_list(float64(), 5), false),
+                             field("weight", fixed_size_list(float64(), 5), false),
+                             field("min", float64(), true), field("max", float64(), true),
+                             field("count", uint64(), false)});
 
   auto output_type = float64();
 
@@ -4648,9 +4691,9 @@ TEST(TestTDigestMapReduceQuantileKernel, Basic) {
       ArrayFromJSON(input_type,
                     "["
                     "{\"mean\":[1.5, 3.5, 5.5, null, null],\"weight\":[2, "
-                    "2, 2, null, null],\"count\":6,\"min\":1.0,\"max\":6.0},"
+                    "2, 2, null, null],\"min\":1.0,\"max\":6.0,\"count\":6},"
                     "{\"mean\":[1.5, 3.5, 5.5, null, null],\"weight\":[2, "
-                    "2, 2, null, null],\"count\":6,\"min\":1.0,\"max\":6.0}"
+                    "2, 2, null, null],\"min\":1.0,\"max\":6.0,\"count\":6}"
                     "]");
 
   TDigestQuantileOptions multiple(/*q=*/{0.1, 0.5, 0.9}, /*min_count=*/12);
