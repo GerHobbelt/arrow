@@ -573,27 +573,35 @@ struct TypeTraits<FixedSizeListType> {
 };
 /// @}
 
-namespace internal {
-
 template <typename T, typename Enable = void>
-struct nested_has_type_singleton_impl : std::false_type {};
-template <typename T>
-struct nested_has_type_singleton_impl<T, std::enable_if_t<is_optional_like<T>::value>>
-    : has_type_singleton<
-          CTypeTraits<typename std::decay<decltype(*std::declval<T>())>::type>> {};
-template <typename T>
-struct nested_has_type_singleton_impl<T, std::enable_if_t<!is_optional_like<T>::value>>
-    : has_type_singleton<CTypeTraits<T>> {};
+struct FindValueType : public std::false_type {
+  using type = T;
+};
+template <typename OPTT>
+struct FindValueType<OPTT, enable_if_optional_like<OPTT>> {
+  using type =
+      typename FindValueType<std::decay_t<decltype(*std::declval<OPTT>())>>::type;
+};
+template <typename OPTT>
+struct FindValueType<std::vector<OPTT>> {
+  using type = typename FindValueType<OPTT>::type;
+};
+template <typename OPTT, unsigned int N>
+struct FindValueType<std::array<OPTT, N>> {
+  using type = typename FindValueType<OPTT>::type;
+};
 
-}  // namespace internal
-
-template <typename T, typename R = void>
-using nested_has_type_singleton = typename internal::nested_has_type_singleton_impl<T, R>;
+template <typename T>
+struct ChildTypeTraits {
+  using is_optional = internal::is_optional_like<T>;
+  using unwrapped_type = typename FindValueType<T>::type;
+  using has_type_singleton = internal::has_type_singleton<CTypeTraits<unwrapped_type>>;
+};
 
 /// \addtogroup c-type-traits
 template <typename CType>
 struct CTypeTraits<std::vector<CType>,
-                   std::enable_if_t<nested_has_type_singleton<CType>::value>>
+                   std::enable_if_t<ChildTypeTraits<CType>::has_type_singleton::value>>
     : public TypeTraits<ListType> {
   using ArrowType = ListType;
   static auto type_singleton() {
@@ -610,7 +618,7 @@ struct CTypeTraits<std::vector<CType>,
 /// \addtogroup c-type-traits
 template <typename CType>
 struct CTypeTraits<std::vector<CType>,
-                   std::enable_if_t<!nested_has_type_singleton<CType>::value>>
+                   std::enable_if_t<!ChildTypeTraits<CType>::has_type_singleton::value>>
     : public TypeTraits<ListType> {
   using ArrowType = ListType;
 };
@@ -618,7 +626,7 @@ struct CTypeTraits<std::vector<CType>,
 /// \addtogroup c-type-traits
 template <typename CType, std::size_t N>
 struct CTypeTraits<std::array<CType, N>,
-                   std::enable_if_t<nested_has_type_singleton<CType>::value>>
+                   std::enable_if_t<ChildTypeTraits<CType>::has_type_singleton::value>>
     : public TypeTraits<FixedSizeListType> {
   using ArrowType = FixedSizeListType;
 
@@ -637,7 +645,7 @@ struct CTypeTraits<std::array<CType, N>,
 /// \addtogroup c-type-traits
 template <typename CType, std::size_t N>
 struct CTypeTraits<std::array<CType, N>,
-                   std::enable_if_t<!nested_has_type_singleton<CType>::value>>
+                   std::enable_if_t<!ChildTypeTraits<CType>::has_type_singleton::value>>
     : public TypeTraits<FixedSizeListType> {
   using ArrowType = FixedSizeListType;
 };
