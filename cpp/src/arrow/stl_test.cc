@@ -176,7 +176,7 @@ TEST(TestSchemaFromTuple, PrimitiveTypesTuple) {
 }
 
 TEST(TestSchemaFromTuple, SimpleList) {
-  Schema expected_schema({field("column1", list(utf8()), false)});
+  Schema expected_schema({field("column1", list(field("item", utf8(), false)), false)});
   std::shared_ptr<Schema> schema =
       SchemaFromTuple<std::tuple<std::vector<std::string>>>::MakeSchema({"column1"});
 
@@ -184,7 +184,9 @@ TEST(TestSchemaFromTuple, SimpleList) {
 }
 
 TEST(TestSchemaFromTuple, NestedList) {
-  Schema expected_schema({field("column1", list(list(boolean())), false)});
+  Schema expected_schema(
+      {field("column1", list(field("item", list(field("item", boolean(), false)), false)),
+             false)});
   std::shared_ptr<Schema> schema =
       SchemaFromTuple<std::tuple<std::vector<std::vector<bool>>>>::MakeSchema(
           {"column1"});
@@ -230,10 +232,10 @@ TEST(TestTableFromTupleVector, PrimitiveTypes) {
 TEST(TestTableFromTupleVector, ListType) {
   using tuple_type = std::tuple<std::vector<int64_t>>;
 
-  auto expected_schema =
-      std::make_shared<Schema>(FieldVector{field("column1", list(int64()), false)});
+  auto expected_schema = std::make_shared<Schema>(
+      FieldVector{field("column1", list(field("item", int64(), false)), false)});
   std::shared_ptr<Array> expected_array =
-      ArrayFromJSON(list(int64()), "[[1, 1, 2, 34], [2, -4]]");
+      ArrayFromJSON(list(field("item", int64(), false)), "[[1, 1, 2, 34], [2, -4]]");
   std::shared_ptr<Table> expected_table = Table::Make(expected_schema, {expected_array});
 
   std::vector<tuple_type> rows{tuple_type(std::vector<int64_t>{1, 1, 2, 34}),
@@ -248,10 +250,11 @@ TEST(TestTableFromTupleVector, ListType) {
 TEST(TestTableFromTupleVector, FixedSizeListType) {
   using tuple_type = std::tuple<std::array<int64_t, 4>>;
 
-  auto expected_schema = std::make_shared<Schema>(
-      FieldVector{field("column1", fixed_size_list(int64(), 4), false)});
+  auto expected_schema = std::make_shared<Schema>(FieldVector{
+      field("column1", fixed_size_list(field("item", int64(), false), 4), false)});
   std::shared_ptr<Array> expected_array =
-      ArrayFromJSON(fixed_size_list(int64(), 4), "[[1, 1, 2, 34], [2, -4, 1, 1]]");
+      ArrayFromJSON(fixed_size_list(field("item", int64(), false), 4),
+                    "[[1, 1, 2, 34], [2, -4, 1, 1]]");
   std::shared_ptr<Table> expected_table = Table::Make(expected_schema, {expected_array});
 
   std::vector<tuple_type> rows{tuple_type(std::array<int64_t, 4>{1, 1, 2, 34}),
@@ -418,9 +421,9 @@ TEST(TestTableFromTupleVector, AppendingMultipleRows) {
   ASSERT_OK(TableFromTupleRange(default_memory_pool(), rows, names, &table));
 
   std::shared_ptr<Schema> expected_schema =
-      schema({field("column1", list(int32()), false)});
+      schema({field("column1", list(field("item", int32(), false)), false)});
   std::shared_ptr<Array> int_array =
-      ArrayFromJSON(list(int32()), "[[1, 2, 3], [10, 20, 30]]");
+      ArrayFromJSON(list(field("item", int32(), false)), "[[1, 2, 3], [10, 20, 30]]");
   auto expected_table = Table::Make(expected_schema, {int_array});
 
   ASSERT_TRUE(expected_table->Equals(*table));
@@ -488,6 +491,26 @@ TEST(TestTupleVectorFromTable, ListType) {
   ASSERT_EQ(rows, expected_rows);
 }
 
+TEST(TestTupleVectorFromTable, ListOptionalType) {
+  using tuple_type = std::tuple<std::vector<std::optional<int64_t>>>;
+
+  compute::ExecContext ctx;
+  compute::CastOptions cast_options;
+  auto expected_schema =
+      std::make_shared<Schema>(FieldVector{field("column1", list(int64()), false)});
+  std::shared_ptr<Array> expected_array =
+      ArrayFromJSON(list(int64()), "[[1, null, 2, null], [null, -4]]");
+  std::shared_ptr<Table> table = Table::Make(expected_schema, {expected_array});
+
+  std::vector<tuple_type> expected_rows{
+      tuple_type(std::vector<std::optional<int64_t>>{1, std::nullopt, 2, std::nullopt}),
+      tuple_type(std::vector<std::optional<int64_t>>{std::nullopt, -4})};
+
+  std::vector<tuple_type> rows(2);
+  ASSERT_OK(TupleRangeFromTable(*table, cast_options, &ctx, &rows));
+  ASSERT_EQ(rows, expected_rows);
+}
+
 TEST(TestTupleVectorFromTable, FixedSizeListType) {
   using tuple_type = std::tuple<std::array<int64_t, 4>>;
 
@@ -502,6 +525,27 @@ TEST(TestTupleVectorFromTable, FixedSizeListType) {
 
   std::vector<tuple_type> expected_rows{tuple_type(std::array<int64_t, 4>{1, 1, 2, 34}),
                                         tuple_type(std::array<int64_t, 4>{2, -4, 1, 1})};
+
+  std::vector<tuple_type> rows(2);
+  ASSERT_OK(TupleRangeFromTable(*table, cast_options, &ctx, &rows));
+  ASSERT_EQ(rows, expected_rows);
+}
+
+TEST(TestTupleVectorFromTable, FixedSizeListOptionalType) {
+  using tuple_type = std::tuple<std::array<std::optional<int64_t>, 4>>;
+
+  compute::ExecContext ctx;
+  compute::CastOptions cast_options;
+  auto expected_schema = std::make_shared<Schema>(
+      FieldVector{field("column1", fixed_size_list(int64(), 4), false)});
+  std::shared_ptr<Array> expected_array =
+      ArrayFromJSON(fixed_size_list(int64(), 4), "[[1, null, 2, 34], [2, -4, null, 1]]");
+  std::shared_ptr<Table> table = Table::Make(expected_schema, {expected_array});
+  ASSERT_OK(table->ValidateFull());
+
+  std::vector<tuple_type> expected_rows{
+      tuple_type(std::array<std::optional<int64_t>, 4>{1, std::nullopt, 2, 34}),
+      tuple_type(std::array<std::optional<int64_t>, 4>{2, -4, std::nullopt, 1})};
 
   std::vector<tuple_type> rows(2);
   ASSERT_OK(TupleRangeFromTable(*table, cast_options, &ctx, &rows));
