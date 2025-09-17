@@ -57,7 +57,8 @@ struct is_optional_like<
 template <typename T, typename Enable = void>
 struct has_type_singleton : std::false_type {};
 template <typename T>
-struct has_type_singleton<T, void_t<decltype(T::type_singleton)>> : std::true_type {};
+struct has_type_singleton<T, std::void_t<decltype(std::declval<T>().type_singleton())>>
+    : std::true_type {};
 
 }  // namespace internal
 
