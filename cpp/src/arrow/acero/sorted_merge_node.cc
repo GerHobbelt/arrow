@@ -280,6 +280,7 @@ class SortedMergeNode : public ExecNode {
 #ifdef ARROW_ENABLE_THREADING
     if (process_thread.joinable()) {
       process_thread.join();
+      return;
     }
 #endif
   }
