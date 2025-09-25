@@ -590,6 +590,7 @@ class SortedMergeNode : public ExecNode {
       // Implementation note: If the queue is empty, we will block here
       if (process_queue.WaitAndPop() == kPoisonPill) {
         EndFromProcessThread();
+        return;
       }
       // Either we're out of data or something went wrong
       if (!PollOnce()) {
