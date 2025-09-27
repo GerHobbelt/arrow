@@ -15,16 +15,14 @@
 .. specific language governing permissions and limitations
 .. under the License.
 
-Examples
-========
+.. _python-development:
+
+******************
+Python Development
+******************
 
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: 2
 
-   cmake_minimal_build
-   compute_and_write_example
-   dataset_documentation_example
-   parquet_column_encryption
-   row_columnar_conversion
-   std::tuple-like ranges to Arrow <tuple_range_conversion>
-   Converting RecordBatch to Tensor <converting_recordbatch_to_tensor>
+   building
+   development
