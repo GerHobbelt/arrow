@@ -170,7 +170,6 @@ class AsyncTaskSchedulerImpl : public AsyncTaskScheduler {
     if (IsAborted()) {
       return false;
     }
-    running_tasks_set_.insert(task.get());
     SubmitTaskUnlocked(std::move(task), std::move(lk));
     return true;
   }
@@ -217,6 +216,8 @@ class AsyncTaskSchedulerImpl : public AsyncTaskScheduler {
           };
         })) {
       return OnTaskFinished(submit_result->status());
+    } else {
+      running_tasks_set_.insert(task.get());
     }
   }
 
