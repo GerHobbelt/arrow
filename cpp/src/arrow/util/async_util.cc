@@ -211,13 +211,17 @@ class AsyncTaskSchedulerImpl : public AsyncTaskScheduler {
             // OnTaskFinished might trigger the scheduler to end.  We want to ensure that
             // is the very last thing that happens after all task destructors have run so
             // we eagerly destroy the task first.
-            running_tasks_set_.erase(task_inner2.get());
+            {
+              std::unique_lock<std::mutex> lk(running_tasks_mutex_);
+              running_tasks_set_.erase(task_inner2.get());
+            }
             task_inner2.reset();
             OnTaskFinished(st);
           };
         })) {
       return OnTaskFinished(submit_result->status());
     } else {
+      std::unique_lock<std::mutex> lk(running_tasks_mutex_);
       running_tasks_set_.insert(task_ptr);
     }
   }
@@ -271,6 +275,7 @@ class AsyncTaskSchedulerImpl : public AsyncTaskScheduler {
     return DoSubmitTask(std::move(task));
   }
 
+  std::mutex running_tasks_mutex_;
   std::unordered_set<Task*> running_tasks_set_;
   Future<> finished_ = Future<>::Make();
   // The initial task is our first task
