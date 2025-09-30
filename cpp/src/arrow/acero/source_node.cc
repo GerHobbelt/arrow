@@ -238,7 +238,7 @@ struct SourceNode : ExecNode, public TracedNode {
 
   void PauseProducing(ExecNode* output, int32_t counter) override {
     std::lock_guard<std::mutex> lg(mutex_);
-    if (counter <= backpressure_counter_) {
+    if (counter <= backpressure_counter_ || stop_requested_) {
       return;
     }
     backpressure_counter_ = counter;
@@ -266,11 +266,11 @@ struct SourceNode : ExecNode, public TracedNode {
     to_finish.MarkFinished();
   }
 
-  Status StopProducing() override {
-    // GH-35837: ensure node is not paused
+  Status StopProducingImpl() override {
     Future<> to_finish;
     {
       std::lock_guard<std::mutex> lg(mutex_);
+      stop_requested_ = true;
       if (!backpressure_future_.is_finished()) {
         to_finish = backpressure_future_;
         backpressure_future_ = Future<>::MakeFinished();
@@ -279,13 +279,6 @@ struct SourceNode : ExecNode, public TracedNode {
     if (to_finish.is_valid()) {
       to_finish.MarkFinished();
     }
-    // only then stop
-    return ExecNode::StopProducing();
-  }
-
-  Status StopProducingImpl() override {
-    std::unique_lock<std::mutex> lock(mutex_);
-    stop_requested_ = true;
     return Status::OK();
   }
 
