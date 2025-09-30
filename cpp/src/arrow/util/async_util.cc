@@ -202,6 +202,7 @@ class AsyncTaskSchedulerImpl : public AsyncTaskScheduler {
       return;
     }
     // Capture `task` to keep it alive until finished
+    auto task_ptr = task.get();
     if (!submit_result->TryAddCallback([this, task_inner = std::move(task)]() mutable {
           return [this, task_inner2 = std::move(task_inner)](const Status& st) mutable {
 #ifdef ARROW_WITH_OPENTELEMETRY
@@ -217,7 +218,7 @@ class AsyncTaskSchedulerImpl : public AsyncTaskScheduler {
         })) {
       return OnTaskFinished(submit_result->status());
     } else {
-      running_tasks_set_.insert(task.get());
+      running_tasks_set_.insert(task_ptr);
     }
   }
 
