@@ -21,7 +21,7 @@
 
 <#include "/@includes/license.ftl" />
 
-package org.apache.arrow.vector.complex.reader;
+    package org.apache.arrow.vector.complex.reader;
 
 <#include "/@includes/vv_imports.ftl" />
 
@@ -44,21 +44,23 @@ public interface BaseReader extends Positionable{
   public interface StructReader extends BaseReader, Iterable<String>{
     FieldReader reader(String name);
   }
-  
+
   public interface RepeatedStructReader extends StructReader{
     boolean next();
     int size();
     void copyAsValue(StructWriter writer);
+    void copyAsValue(StructWriter writer, ExtensionTypeWriterFactory writerFactory);
   }
-  
+
   public interface ListReader extends BaseReader{
-    FieldReader reader(); 
+    FieldReader reader();
   }
-  
+
   public interface RepeatedListReader extends ListReader{
     boolean next();
     int size();
     void copyAsValue(ListWriter writer);
+    void copyAsValue(ListWriter writer, ExtensionTypeWriterFactory writerFactory);
   }
 
   public interface MapReader extends BaseReader{
@@ -69,12 +71,13 @@ public interface BaseReader extends Positionable{
     boolean next();
     int size();
     void copyAsValue(MapWriter writer);
+    void copyAsValue(MapWriter writer, ExtensionTypeWriterFactory writerFactory);
   }
-  
-  public interface ScalarReader extends  
-  <#list vv.types as type><#list type.minor as minor><#assign name = minor.class?cap_first /> ${name}Reader, </#list></#list> 
-  BaseReader {}
-  
+
+  public interface ScalarReader extends
+  <#list vv.types as type><#list type.minor as minor><#assign name = minor.class?cap_first /> ${name}Reader, </#list></#list>
+  ExtensionReader, BaseReader {}
+
   interface ComplexReader{
     StructReader rootAsStruct();
     ListReader rootAsList();
@@ -82,4 +85,3 @@ public interface BaseReader extends Positionable{
     boolean ok();
   }
 }
-

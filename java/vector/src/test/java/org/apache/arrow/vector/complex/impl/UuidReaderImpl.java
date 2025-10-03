@@ -16,32 +16,24 @@
  */
 package org.apache.arrow.vector.complex.impl;
 
-import org.apache.arrow.vector.ExtensionTypeVector;
-import org.apache.arrow.vector.complex.writer.FieldWriter;
+import org.apache.arrow.vector.UuidVector;
+import org.apache.arrow.vector.holder.UuidHolder;
 import org.apache.arrow.vector.holders.ExtensionHolder;
+import org.apache.arrow.vector.types.Types.MinorType;
 import org.apache.arrow.vector.types.pojo.Field;
 
-public class UnionExtensionWriter extends AbstractFieldWriter {
-  protected ExtensionTypeVector vector;
-  protected FieldWriter writer;
+public class UuidReaderImpl extends AbstractFieldReader {
 
-  public UnionExtensionWriter(ExtensionTypeVector vector) {
+  private final UuidVector vector;
+
+  public UuidReaderImpl(UuidVector vector) {
+    super();
     this.vector = vector;
   }
 
   @Override
-  public void allocate() {
-    vector.allocateNew();
-  }
-
-  @Override
-  public void clear() {
-    vector.clear();
-  }
-
-  @Override
-  public int getValueCapacity() {
-    return vector.getValueCapacity();
+  public MinorType getMinorType() {
+    return vector.getMinorType();
   }
 
   @Override
@@ -50,35 +42,28 @@ public class UnionExtensionWriter extends AbstractFieldWriter {
   }
 
   @Override
-  public void close() throws Exception {
-    vector.close();
+  public boolean isSet() {
+    return !vector.isNull(idx());
   }
 
   @Override
-  public void writeExtension(Object var1) {
-    this.writer.writeExtension(var1);
+  public void read(ExtensionHolder holder) {
+    vector.get(idx(), (UuidHolder) holder);
   }
 
   @Override
-  public void addExtensionTypeWriterFactory(ExtensionTypeWriterFactory factory) {
-    this.writer = factory.getWriterImpl(vector);
-    this.writer.setPosition(idx());
-  }
-
-  public void write(ExtensionHolder holder) {
-    this.writer.write(holder);
+  public void read(int arrayIndex, ExtensionHolder holder) {
+    vector.get(arrayIndex, (UuidHolder) holder);
   }
 
   @Override
-  public void setPosition(int index) {
-    super.setPosition(index);
-    if (this.writer != null) {
-      this.writer.setPosition(index);
-    }
+  public void copyAsValue(AbstractExtensionTypeWriter writer) {
+    UuidWriterImpl impl = (UuidWriterImpl) writer;
+    impl.vector.copyFromSafe(idx(), impl.idx(), vector);
   }
 
   @Override
-  public void writeNull() {
-    this.writer.writeNull();
+  public Object readObject() {
+    return vector.getObject(idx());
   }
 }
