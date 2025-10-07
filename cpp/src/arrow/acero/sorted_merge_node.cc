@@ -559,7 +559,7 @@ class SortedMergeNode : public ExecNode {
         out_b.index = batches_produced++;
         Status st = output_->InputReceived(this, std::move(out_b));
         if (!st.ok()) {
-          ARROW_LOG(FATAL) << "Error in output_::InputReceived: " << st.ToString();
+          ARROW_LOG(ERROR) << "Error in output_::InputReceived: " << st.ToString();
           EndFromProcessThread(std::move(st));
         }
       } else {
