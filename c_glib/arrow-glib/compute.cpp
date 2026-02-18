@@ -26,6 +26,7 @@
 #include <arrow-glib/datum.hpp>
 #include <arrow-glib/enums.h>
 #include <arrow-glib/error.hpp>
+#include <arrow-glib/executor.hpp>
 #include <arrow-glib/expression.hpp>
 #include <arrow-glib/reader.hpp>
 #include <arrow-glib/record-batch.hpp>
@@ -264,6 +265,14 @@ G_BEGIN_DECLS
  * #GArrowElementWiseAggregateOptions is a class to customize element-wise
  * aggregate functions such as `min_element_wise` and `max_element_wise`.
  *
+ * #GArrowDayOfWeekOptions is a class to customize the `day_of_week` function.
+ *
+ * #GArrowExtractRegexOptions is a class to customize the `extract_regex`
+ * function.
+ *
+ * #GArrowExtractRegexSpanOptions is a class to customize the `extract_regex_span`
+ * function.
+ *
  * There are many functions to compute data on an array.
  */
 
@@ -286,10 +295,11 @@ garrow_compute_initialize(GError **error)
   return garrow::check(error, status, "[compute][initialize]");
 }
 
-typedef struct GArrowExecuteContextPrivate_
+struct GArrowExecuteContextPrivate
 {
-  arrow::compute::ExecContext context;
-} GArrowExecuteContextPrivate;
+  std::shared_ptr<arrow::compute::ExecContext> context;
+  GArrowExecutor *executor;
+};
 
 G_DEFINE_TYPE_WITH_PRIVATE(GArrowExecuteContext, garrow_execute_context, G_TYPE_OBJECT)
 
@@ -297,19 +307,78 @@ G_DEFINE_TYPE_WITH_PRIVATE(GArrowExecuteContext, garrow_execute_context, G_TYPE_
   static_cast<GArrowExecuteContextPrivate *>(                                            \
     garrow_execute_context_get_instance_private(GARROW_EXECUTE_CONTEXT(object)))
 
+enum {
+  PROP_EXECUTOR = 1,
+};
+
+static void
+garrow_execute_context_dispose(GObject *object)
+{
+  auto priv = GARROW_EXECUTE_CONTEXT_GET_PRIVATE(object);
+
+  if (priv->executor) {
+    g_object_unref(priv->executor);
+    priv->executor = nullptr;
+  }
+
+  G_OBJECT_CLASS(garrow_execute_context_parent_class)->dispose(object);
+}
+
 static void
 garrow_execute_context_finalize(GObject *object)
 {
   auto priv = GARROW_EXECUTE_CONTEXT_GET_PRIVATE(object);
-  priv->context.~ExecContext();
+  priv->context.~shared_ptr();
   G_OBJECT_CLASS(garrow_execute_context_parent_class)->finalize(object);
+}
+
+static void
+garrow_execute_context_set_property(GObject *object,
+                                    guint prop_id,
+                                    const GValue *value,
+                                    GParamSpec *pspec)
+{
+  auto priv = GARROW_EXECUTE_CONTEXT_GET_PRIVATE(object);
+
+  switch (prop_id) {
+  case PROP_EXECUTOR:
+    {
+      priv->executor = GARROW_EXECUTOR(g_value_dup_object(value));
+      auto arrow_executor = garrow_executor_get_raw(priv->executor);
+      priv->context =
+        std::make_shared<arrow::compute::ExecContext>(arrow::default_memory_pool(),
+                                                      arrow_executor.get());
+      break;
+    }
+  default:
+    G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
+    break;
+  }
+}
+
+static void
+garrow_execute_context_get_property(GObject *object,
+                                    guint prop_id,
+                                    GValue *value,
+                                    GParamSpec *pspec)
+{
+  auto priv = GARROW_EXECUTE_CONTEXT_GET_PRIVATE(object);
+
+  switch (prop_id) {
+  case PROP_EXECUTOR:
+    g_value_set_object(value, priv->executor);
+    break;
+  default:
+    G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
+    break;
+  }
 }
 
 static void
 garrow_execute_context_init(GArrowExecuteContext *object)
 {
   auto priv = GARROW_EXECUTE_CONTEXT_GET_PRIVATE(object);
-  new (&priv->context) arrow::compute::ExecContext(arrow::default_memory_pool(), nullptr);
+  new (&priv->context) std::shared_ptr<arrow::compute::ExecContext>;
 }
 
 static void
@@ -317,21 +386,41 @@ garrow_execute_context_class_init(GArrowExecuteContextClass *klass)
 {
   auto gobject_class = G_OBJECT_CLASS(klass);
 
+  gobject_class->dispose = garrow_execute_context_dispose;
   gobject_class->finalize = garrow_execute_context_finalize;
+  gobject_class->set_property = garrow_execute_context_set_property;
+  gobject_class->get_property = garrow_execute_context_get_property;
+
+  GParamSpec *spec;
+  /**
+   * GArrowExecuteContext:executor:
+   *
+   * The executor for execution.
+   *
+   * Since: 23.0.0
+   */
+  spec = g_param_spec_object(
+    "executor",
+    "Executor",
+    "The executor for execution",
+    GARROW_TYPE_EXECUTOR,
+    static_cast<GParamFlags>(G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
+  g_object_class_install_property(gobject_class, PROP_EXECUTOR, spec);
 }
 
 /**
  * garrow_execute_context_new:
+ * @executor: (nullable): A #GArrowExecutor or %NULL.
  *
  * Returns: A newly created #GArrowExecuteContext.
  *
  * Since: 1.0.0
  */
 GArrowExecuteContext *
-garrow_execute_context_new(void)
+garrow_execute_context_new(GArrowExecutor *executor)
 {
-  auto execute_context = g_object_new(GARROW_TYPE_EXECUTE_CONTEXT, NULL);
-  return GARROW_EXECUTE_CONTEXT(execute_context);
+  return GARROW_EXECUTE_CONTEXT(
+    g_object_new(GARROW_TYPE_EXECUTE_CONTEXT, "executor", executor, nullptr));
 }
 
 typedef struct GArrowFunctionOptionsPrivate_
@@ -1890,6 +1979,7 @@ garrow_execute_plan_class_init(GArrowExecutePlanClass *klass)
 
 /**
  * garrow_execute_plan_new:
+ * @context: (nullable): A #GArrowExecuteContext or %NULL.
  * @error: (nullable): Return location for a #GError or %NULL.
  *
  * Returns: (nullable): A newly created #GArrowExecutePlan on success,
@@ -1898,9 +1988,15 @@ garrow_execute_plan_class_init(GArrowExecutePlanClass *klass)
  * Since: 6.0.0
  */
 GArrowExecutePlan *
-garrow_execute_plan_new(GError **error)
+garrow_execute_plan_new(GArrowExecuteContext *context, GError **error)
 {
-  auto arrow_plan_result = arrow::acero::ExecPlan::Make();
+  arrow::Result<std::shared_ptr<arrow::acero::ExecPlan>> arrow_plan_result;
+  if (context) {
+    auto arrow_context = garrow_execute_context_get_raw(context);
+    arrow_plan_result = arrow::acero::ExecPlan::Make(*arrow_context);
+  } else {
+    arrow_plan_result = arrow::acero::ExecPlan::Make();
+  }
   if (garrow::check(error, arrow_plan_result, "[execute-plan][new]")) {
     return GARROW_EXECUTE_PLAN(
       g_object_new(GARROW_TYPE_EXECUTE_PLAN, "plan", &(*arrow_plan_result), NULL));
@@ -6869,6 +6965,319 @@ garrow_element_wise_aggregate_options_new(void)
   return GARROW_ELEMENT_WISE_AGGREGATE_OPTIONS(options);
 }
 
+enum {
+  PROP_DAY_OF_WEEK_OPTIONS_COUNT_FROM_ZERO = 1,
+  PROP_DAY_OF_WEEK_OPTIONS_WEEK_START,
+};
+
+G_DEFINE_TYPE(GArrowDayOfWeekOptions,
+              garrow_day_of_week_options,
+              GARROW_TYPE_FUNCTION_OPTIONS)
+
+static void
+garrow_day_of_week_options_set_property(GObject *object,
+                                        guint prop_id,
+                                        const GValue *value,
+                                        GParamSpec *pspec)
+{
+  auto options = garrow_day_of_week_options_get_raw(GARROW_DAY_OF_WEEK_OPTIONS(object));
+
+  switch (prop_id) {
+  case PROP_DAY_OF_WEEK_OPTIONS_COUNT_FROM_ZERO:
+    options->count_from_zero = g_value_get_boolean(value);
+    break;
+  case PROP_DAY_OF_WEEK_OPTIONS_WEEK_START:
+    options->week_start = g_value_get_uint(value);
+    break;
+  default:
+    G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
+    break;
+  }
+}
+
+static void
+garrow_day_of_week_options_get_property(GObject *object,
+                                        guint prop_id,
+                                        GValue *value,
+                                        GParamSpec *pspec)
+{
+  auto options = garrow_day_of_week_options_get_raw(GARROW_DAY_OF_WEEK_OPTIONS(object));
+
+  switch (prop_id) {
+  case PROP_DAY_OF_WEEK_OPTIONS_COUNT_FROM_ZERO:
+    g_value_set_boolean(value, options->count_from_zero);
+    break;
+  case PROP_DAY_OF_WEEK_OPTIONS_WEEK_START:
+    g_value_set_uint(value, options->week_start);
+    break;
+  default:
+    G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
+    break;
+  }
+}
+
+static void
+garrow_day_of_week_options_init(GArrowDayOfWeekOptions *object)
+{
+  auto priv = GARROW_FUNCTION_OPTIONS_GET_PRIVATE(object);
+  priv->options = static_cast<arrow::compute::FunctionOptions *>(
+    new arrow::compute::DayOfWeekOptions());
+}
+
+static void
+garrow_day_of_week_options_class_init(GArrowDayOfWeekOptionsClass *klass)
+{
+  auto gobject_class = G_OBJECT_CLASS(klass);
+
+  gobject_class->set_property = garrow_day_of_week_options_set_property;
+  gobject_class->get_property = garrow_day_of_week_options_get_property;
+
+  arrow::compute::DayOfWeekOptions options;
+
+  GParamSpec *spec;
+  /**
+   * GArrowDayOfWeekOptions:count-from-zero:
+   *
+   * Number days from 0 if true and from 1 if false.
+   *
+   * Since: 23.0.0
+   */
+  spec = g_param_spec_boolean("count-from-zero",
+                              "Count from zero",
+                              "Number days from 0 if true and from 1 if false",
+                              options.count_from_zero,
+                              static_cast<GParamFlags>(G_PARAM_READWRITE));
+  g_object_class_install_property(gobject_class,
+                                  PROP_DAY_OF_WEEK_OPTIONS_COUNT_FROM_ZERO,
+                                  spec);
+
+  /**
+   * GArrowDayOfWeekOptions:week-start:
+   *
+   * What day does the week start with (Monday=1, Sunday=7).
+   * The numbering is unaffected by the count_from_zero parameter.
+   *
+   * Since: 23.0.0
+   */
+  spec = g_param_spec_uint("week-start",
+                           "Week start",
+                           "What day does the week start with (Monday=1, Sunday=7). The "
+                           "numbering is unaffected by the count_from_zero parameter",
+                           1,
+                           7,
+                           options.week_start,
+                           static_cast<GParamFlags>(G_PARAM_READWRITE));
+  g_object_class_install_property(gobject_class,
+                                  PROP_DAY_OF_WEEK_OPTIONS_WEEK_START,
+                                  spec);
+}
+
+/**
+ * garrow_day_of_week_options_new:
+ *
+ * Returns: A newly created #GArrowDayOfWeekOptions.
+ *
+ * Since: 23.0.0
+ */
+GArrowDayOfWeekOptions *
+garrow_day_of_week_options_new(void)
+{
+  auto options = g_object_new(GARROW_TYPE_DAY_OF_WEEK_OPTIONS, NULL);
+  return GARROW_DAY_OF_WEEK_OPTIONS(options);
+}
+
+enum {
+  PROP_EXTRACT_REGEX_OPTIONS_PATTERN = 1,
+};
+
+G_DEFINE_TYPE(GArrowExtractRegexOptions,
+              garrow_extract_regex_options,
+              GARROW_TYPE_FUNCTION_OPTIONS)
+
+static void
+garrow_extract_regex_options_set_property(GObject *object,
+                                          guint prop_id,
+                                          const GValue *value,
+                                          GParamSpec *pspec)
+{
+  auto options =
+    garrow_extract_regex_options_get_raw(GARROW_EXTRACT_REGEX_OPTIONS(object));
+
+  switch (prop_id) {
+  case PROP_EXTRACT_REGEX_OPTIONS_PATTERN:
+    options->pattern = g_value_get_string(value);
+    break;
+  default:
+    G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
+    break;
+  }
+}
+
+static void
+garrow_extract_regex_options_get_property(GObject *object,
+                                          guint prop_id,
+                                          GValue *value,
+                                          GParamSpec *pspec)
+{
+  auto options =
+    garrow_extract_regex_options_get_raw(GARROW_EXTRACT_REGEX_OPTIONS(object));
+
+  switch (prop_id) {
+  case PROP_EXTRACT_REGEX_OPTIONS_PATTERN:
+    g_value_set_string(value, options->pattern.c_str());
+    break;
+  default:
+    G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
+    break;
+  }
+}
+
+static void
+garrow_extract_regex_options_init(GArrowExtractRegexOptions *object)
+{
+  auto priv = GARROW_FUNCTION_OPTIONS_GET_PRIVATE(object);
+  priv->options = static_cast<arrow::compute::FunctionOptions *>(
+    new arrow::compute::ExtractRegexOptions());
+}
+
+static void
+garrow_extract_regex_options_class_init(GArrowExtractRegexOptionsClass *klass)
+{
+  auto gobject_class = G_OBJECT_CLASS(klass);
+
+  gobject_class->set_property = garrow_extract_regex_options_set_property;
+  gobject_class->get_property = garrow_extract_regex_options_get_property;
+
+  arrow::compute::ExtractRegexOptions options;
+
+  GParamSpec *spec;
+  /**
+   * GArrowExtractRegexOptions:pattern:
+   *
+   * Regular expression with named capture fields.
+   *
+   * Since: 23.0.0
+   */
+  spec = g_param_spec_string("pattern",
+                             "Pattern",
+                             "Regular expression with named capture fields",
+                             options.pattern.c_str(),
+                             static_cast<GParamFlags>(G_PARAM_READWRITE));
+  g_object_class_install_property(gobject_class,
+                                  PROP_EXTRACT_REGEX_OPTIONS_PATTERN,
+                                  spec);
+}
+
+/**
+ * garrow_extract_regex_options_new:
+ *
+ * Returns: A newly created #GArrowExtractRegexOptions.
+ *
+ * Since: 23.0.0
+ */
+GArrowExtractRegexOptions *
+garrow_extract_regex_options_new(void)
+{
+  auto options = g_object_new(GARROW_TYPE_EXTRACT_REGEX_OPTIONS, NULL);
+  return GARROW_EXTRACT_REGEX_OPTIONS(options);
+}
+
+enum {
+  PROP_EXTRACT_REGEX_SPAN_OPTIONS_PATTERN = 1,
+};
+
+G_DEFINE_TYPE(GArrowExtractRegexSpanOptions,
+              garrow_extract_regex_span_options,
+              GARROW_TYPE_FUNCTION_OPTIONS)
+
+static void
+garrow_extract_regex_span_options_set_property(GObject *object,
+                                               guint prop_id,
+                                               const GValue *value,
+                                               GParamSpec *pspec)
+{
+  auto options =
+    garrow_extract_regex_span_options_get_raw(GARROW_EXTRACT_REGEX_SPAN_OPTIONS(object));
+
+  switch (prop_id) {
+  case PROP_EXTRACT_REGEX_SPAN_OPTIONS_PATTERN:
+    options->pattern = g_value_get_string(value);
+    break;
+  default:
+    G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
+    break;
+  }
+}
+
+static void
+garrow_extract_regex_span_options_get_property(GObject *object,
+                                               guint prop_id,
+                                               GValue *value,
+                                               GParamSpec *pspec)
+{
+  auto options =
+    garrow_extract_regex_span_options_get_raw(GARROW_EXTRACT_REGEX_SPAN_OPTIONS(object));
+
+  switch (prop_id) {
+  case PROP_EXTRACT_REGEX_SPAN_OPTIONS_PATTERN:
+    g_value_set_string(value, options->pattern.c_str());
+    break;
+  default:
+    G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
+    break;
+  }
+}
+
+static void
+garrow_extract_regex_span_options_init(GArrowExtractRegexSpanOptions *object)
+{
+  auto priv = GARROW_FUNCTION_OPTIONS_GET_PRIVATE(object);
+  priv->options = static_cast<arrow::compute::FunctionOptions *>(
+    new arrow::compute::ExtractRegexSpanOptions());
+}
+
+static void
+garrow_extract_regex_span_options_class_init(GArrowExtractRegexSpanOptionsClass *klass)
+{
+  auto gobject_class = G_OBJECT_CLASS(klass);
+
+  gobject_class->set_property = garrow_extract_regex_span_options_set_property;
+  gobject_class->get_property = garrow_extract_regex_span_options_get_property;
+
+  arrow::compute::ExtractRegexSpanOptions options;
+
+  GParamSpec *spec;
+  /**
+   * GArrowExtractRegexSpanOptions:pattern:
+   *
+   * Regular expression with named capture fields.
+   *
+   * Since: 23.0.0
+   */
+  spec = g_param_spec_string("pattern",
+                             "Pattern",
+                             "Regular expression with named capture fields",
+                             options.pattern.c_str(),
+                             static_cast<GParamFlags>(G_PARAM_READWRITE));
+  g_object_class_install_property(gobject_class,
+                                  PROP_EXTRACT_REGEX_SPAN_OPTIONS_PATTERN,
+                                  spec);
+}
+
+/**
+ * garrow_extract_regex_span_options_new:
+ *
+ * Returns: A newly created #GArrowExtractRegexSpanOptions.
+ *
+ * Since: 23.0.0
+ */
+GArrowExtractRegexSpanOptions *
+garrow_extract_regex_span_options_new(void)
+{
+  auto options = g_object_new(GARROW_TYPE_EXTRACT_REGEX_SPAN_OPTIONS, NULL);
+  return GARROW_EXTRACT_REGEX_SPAN_OPTIONS(options);
+}
+
 G_END_DECLS
 
 arrow::Result<arrow::FieldRef>
@@ -6886,7 +7295,7 @@ arrow::compute::ExecContext *
 garrow_execute_context_get_raw(GArrowExecuteContext *context)
 {
   auto priv = GARROW_EXECUTE_CONTEXT_GET_PRIVATE(context);
-  return &priv->context;
+  return priv->context.get();
 }
 
 GArrowFunctionOptions *
@@ -7021,6 +7430,22 @@ garrow_function_options_new_raw(const arrow::compute::FunctionOptions *arrow_opt
       static_cast<const arrow::compute::ElementWiseAggregateOptions *>(arrow_options);
     auto options =
       garrow_element_wise_aggregate_options_new_raw(arrow_element_wise_aggregate_options);
+    return GARROW_FUNCTION_OPTIONS(options);
+  } else if (arrow_type_name == "DayOfWeekOptions") {
+    const auto arrow_day_of_week_options =
+      static_cast<const arrow::compute::DayOfWeekOptions *>(arrow_options);
+    auto options = garrow_day_of_week_options_new_raw(arrow_day_of_week_options);
+    return GARROW_FUNCTION_OPTIONS(options);
+  } else if (arrow_type_name == "ExtractRegexOptions") {
+    const auto arrow_extract_regex_options =
+      static_cast<const arrow::compute::ExtractRegexOptions *>(arrow_options);
+    auto options = garrow_extract_regex_options_new_raw(arrow_extract_regex_options);
+    return GARROW_FUNCTION_OPTIONS(options);
+  } else if (arrow_type_name == "ExtractRegexSpanOptions") {
+    const auto arrow_extract_regex_span_options =
+      static_cast<const arrow::compute::ExtractRegexSpanOptions *>(arrow_options);
+    auto options =
+      garrow_extract_regex_span_options_new_raw(arrow_extract_regex_span_options);
     return GARROW_FUNCTION_OPTIONS(options);
   } else {
     auto options = g_object_new(GARROW_TYPE_FUNCTION_OPTIONS, NULL);
@@ -7624,5 +8049,58 @@ arrow::compute::ElementWiseAggregateOptions *
 garrow_element_wise_aggregate_options_get_raw(GArrowElementWiseAggregateOptions *options)
 {
   return static_cast<arrow::compute::ElementWiseAggregateOptions *>(
+    garrow_function_options_get_raw(GARROW_FUNCTION_OPTIONS(options)));
+}
+
+GArrowDayOfWeekOptions *
+garrow_day_of_week_options_new_raw(const arrow::compute::DayOfWeekOptions *arrow_options)
+{
+  return GARROW_DAY_OF_WEEK_OPTIONS(g_object_new(GARROW_TYPE_DAY_OF_WEEK_OPTIONS,
+                                                 "count-from-zero",
+                                                 arrow_options->count_from_zero,
+                                                 "week-start",
+                                                 arrow_options->week_start,
+                                                 NULL));
+}
+
+arrow::compute::DayOfWeekOptions *
+garrow_day_of_week_options_get_raw(GArrowDayOfWeekOptions *options)
+{
+  return static_cast<arrow::compute::DayOfWeekOptions *>(
+    garrow_function_options_get_raw(GARROW_FUNCTION_OPTIONS(options)));
+}
+
+GArrowExtractRegexOptions *
+garrow_extract_regex_options_new_raw(
+  const arrow::compute::ExtractRegexOptions *arrow_options)
+{
+  return GARROW_EXTRACT_REGEX_OPTIONS(g_object_new(GARROW_TYPE_EXTRACT_REGEX_OPTIONS,
+                                                   "pattern",
+                                                   arrow_options->pattern.c_str(),
+                                                   NULL));
+}
+
+arrow::compute::ExtractRegexOptions *
+garrow_extract_regex_options_get_raw(GArrowExtractRegexOptions *options)
+{
+  return static_cast<arrow::compute::ExtractRegexOptions *>(
+    garrow_function_options_get_raw(GARROW_FUNCTION_OPTIONS(options)));
+}
+
+GArrowExtractRegexSpanOptions *
+garrow_extract_regex_span_options_new_raw(
+  const arrow::compute::ExtractRegexSpanOptions *arrow_options)
+{
+  return GARROW_EXTRACT_REGEX_SPAN_OPTIONS(
+    g_object_new(GARROW_TYPE_EXTRACT_REGEX_SPAN_OPTIONS,
+                 "pattern",
+                 arrow_options->pattern.c_str(),
+                 NULL));
+}
+
+arrow::compute::ExtractRegexSpanOptions *
+garrow_extract_regex_span_options_get_raw(GArrowExtractRegexSpanOptions *options)
+{
+  return static_cast<arrow::compute::ExtractRegexSpanOptions *>(
     garrow_function_options_get_raw(GARROW_FUNCTION_OPTIONS(options)));
 }

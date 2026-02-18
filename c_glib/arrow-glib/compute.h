@@ -21,6 +21,7 @@
 
 #include <arrow-glib/compute-definition.h>
 #include <arrow-glib/datum.h>
+#include <arrow-glib/executor.h>
 #include <arrow-glib/reader.h>
 
 G_BEGIN_DECLS
@@ -40,7 +41,7 @@ struct _GArrowExecuteContextClass
 
 GARROW_AVAILABLE_IN_1_0
 GArrowExecuteContext *
-garrow_execute_context_new(void);
+garrow_execute_context_new(GArrowExecutor *executor);
 
 GARROW_AVAILABLE_IN_7_0
 gboolean
@@ -322,7 +323,7 @@ struct _GArrowExecutePlanClass
 
 GARROW_AVAILABLE_IN_6_0
 GArrowExecutePlan *
-garrow_execute_plan_new(GError **error);
+garrow_execute_plan_new(GArrowExecuteContext *context, GError **error);
 GARROW_AVAILABLE_IN_6_0
 GArrowExecuteNode *
 garrow_execute_plan_build_node(GArrowExecutePlan *plan,
@@ -1239,5 +1240,54 @@ struct _GArrowElementWiseAggregateOptionsClass
 GARROW_AVAILABLE_IN_23_0
 GArrowElementWiseAggregateOptions *
 garrow_element_wise_aggregate_options_new(void);
+
+#define GARROW_TYPE_DAY_OF_WEEK_OPTIONS (garrow_day_of_week_options_get_type())
+GARROW_AVAILABLE_IN_23_0
+G_DECLARE_DERIVABLE_TYPE(GArrowDayOfWeekOptions,
+                         garrow_day_of_week_options,
+                         GARROW,
+                         DAY_OF_WEEK_OPTIONS,
+                         GArrowFunctionOptions)
+struct _GArrowDayOfWeekOptionsClass
+{
+  GArrowFunctionOptionsClass parent_class;
+};
+
+GARROW_AVAILABLE_IN_23_0
+GArrowDayOfWeekOptions *
+garrow_day_of_week_options_new(void);
+
+#define GARROW_TYPE_EXTRACT_REGEX_OPTIONS (garrow_extract_regex_options_get_type())
+GARROW_AVAILABLE_IN_23_0
+G_DECLARE_DERIVABLE_TYPE(GArrowExtractRegexOptions,
+                         garrow_extract_regex_options,
+                         GARROW,
+                         EXTRACT_REGEX_OPTIONS,
+                         GArrowFunctionOptions)
+struct _GArrowExtractRegexOptionsClass
+{
+  GArrowFunctionOptionsClass parent_class;
+};
+
+GARROW_AVAILABLE_IN_23_0
+GArrowExtractRegexOptions *
+garrow_extract_regex_options_new(void);
+
+#define GARROW_TYPE_EXTRACT_REGEX_SPAN_OPTIONS                                           \
+  (garrow_extract_regex_span_options_get_type())
+GARROW_AVAILABLE_IN_23_0
+G_DECLARE_DERIVABLE_TYPE(GArrowExtractRegexSpanOptions,
+                         garrow_extract_regex_span_options,
+                         GARROW,
+                         EXTRACT_REGEX_SPAN_OPTIONS,
+                         GArrowFunctionOptions)
+struct _GArrowExtractRegexSpanOptionsClass
+{
+  GArrowFunctionOptionsClass parent_class;
+};
+
+GARROW_AVAILABLE_IN_23_0
+GArrowExtractRegexSpanOptions *
+garrow_extract_regex_span_options_new(void);
 
 G_END_DECLS

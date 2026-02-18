@@ -15,20 +15,15 @@
 # specific language governing permissions and limitations
 # under the License.
 
-FROM centos:7
+module Arrow
+  class LargeListArrayBuilder
+    class << self
+      def build(data_type, values)
+        builder = new(data_type)
+        builder.build(values)
+      end
+    end
 
-ARG DEBUG
-
-# GH-42128
-# Switch repos to point to to vault.centos.org because Centos Stream 8 is EOL
-RUN sed -i \
-  -e 's/^mirrorlist/#mirrorlist/' \
-  -e 's/^#baseurl/baseurl/' \
-  -e 's/mirror\.centos\.org/vault.centos.org/' \
-  /etc/yum.repos.d/*.repo
-
-RUN \
-  quiet=$([ "${DEBUG}" = "yes" ] || echo "--quiet") && \
-  yum install -y ${quiet} \
-    rpmdevtools && \
-  yum clean ${quiet} all
+    prepend ListValuesAppendable
+  end
+end

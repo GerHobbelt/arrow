@@ -24,10 +24,15 @@ require_relative "type"
 
 require_relative "org/apache/arrow/flatbuf/binary"
 require_relative "org/apache/arrow/flatbuf/bool"
+require_relative "org/apache/arrow/flatbuf/date"
+require_relative "org/apache/arrow/flatbuf/date_unit"
+require_relative "org/apache/arrow/flatbuf/fixed_size_binary"
 require_relative "org/apache/arrow/flatbuf/floating_point"
 require_relative "org/apache/arrow/flatbuf/footer"
 require_relative "org/apache/arrow/flatbuf/int"
 require_relative "org/apache/arrow/flatbuf/large_binary"
+require_relative "org/apache/arrow/flatbuf/large_list"
+require_relative "org/apache/arrow/flatbuf/large_utf8"
 require_relative "org/apache/arrow/flatbuf/list"
 require_relative "org/apache/arrow/flatbuf/map"
 require_relative "org/apache/arrow/flatbuf/message"
@@ -35,6 +40,11 @@ require_relative "org/apache/arrow/flatbuf/null"
 require_relative "org/apache/arrow/flatbuf/precision"
 require_relative "org/apache/arrow/flatbuf/schema"
 require_relative "org/apache/arrow/flatbuf/struct_"
+require_relative "org/apache/arrow/flatbuf/time"
+require_relative "org/apache/arrow/flatbuf/timestamp"
+require_relative "org/apache/arrow/flatbuf/time_unit"
+require_relative "org/apache/arrow/flatbuf/union"
+require_relative "org/apache/arrow/flatbuf/union_mode"
 require_relative "org/apache/arrow/flatbuf/utf8"
 
 module ArrowFormat
@@ -151,6 +161,24 @@ module ArrowFormat
           else
             type = UInt8Type.singleton
           end
+        when 16
+          if fb_type.signed?
+            type = Int16Type.singleton
+          else
+            type = UInt16Type.singleton
+          end
+        when 32
+          if fb_type.signed?
+            type = Int32Type.singleton
+          else
+            type = UInt32Type.singleton
+          end
+        when 64
+          if fb_type.signed?
+            type = Int64Type.singleton
+          else
+            type = UInt64Type.singleton
+          end
         end
       when Org::Apache::Arrow::Flatbuf::FloatingPoint
         case fb_type.precision
@@ -159,11 +187,49 @@ module ArrowFormat
         when Org::Apache::Arrow::Flatbuf::Precision::DOUBLE
           type = Float64Type.singleton
         end
+      when Org::Apache::Arrow::Flatbuf::Date
+        case fb_type.unit
+        when Org::Apache::Arrow::Flatbuf::DateUnit::DAY
+          type = Date32Type.singleton
+        when Org::Apache::Arrow::Flatbuf::DateUnit::MILLISECOND
+          type = Date64Type.singleton
+        end
+      when Org::Apache::Arrow::Flatbuf::Time
+        case fb_type.bit_width
+        when 32
+          case fb_type.unit
+          when Org::Apache::Arrow::Flatbuf::TimeUnit::SECOND
+            type = Time32Type.new(:second)
+          when Org::Apache::Arrow::Flatbuf::TimeUnit::MILLISECOND
+            type = Time32Type.new(:millisecond)
+          end
+        when 64
+          case fb_type.unit
+          when Org::Apache::Arrow::Flatbuf::TimeUnit::MICROSECOND
+            type = Time64Type.new(:microsecond)
+          when Org::Apache::Arrow::Flatbuf::TimeUnit::NANOSECOND
+            type = Time64Type.new(:nanosecond)
+          end
+        end
+      when Org::Apache::Arrow::Flatbuf::Timestamp
+        unit = fb_type.unit.name.downcase.to_sym
+        type = TimestampType.new(unit, fb_type.timezone)
       when Org::Apache::Arrow::Flatbuf::List
         type = ListType.new(read_field(fb_field.children[0]))
+      when Org::Apache::Arrow::Flatbuf::LargeList
+        type = LargeListType.new(read_field(fb_field.children[0]))
       when Org::Apache::Arrow::Flatbuf::Struct
         children = fb_field.children.collect {|child| read_field(child)}
         type = StructType.new(children)
+      when Org::Apache::Arrow::Flatbuf::Union
+        children = fb_field.children.collect {|child| read_field(child)}
+        type_ids = fb_type.type_ids
+        case fb_type.mode
+        when Org::Apache::Arrow::Flatbuf::UnionMode::DENSE
+          type = DenseUnionType.new(children, type_ids)
+        when Org::Apache::Arrow::Flatbuf::UnionMode::SPARSE
+          type = SparseUnionType.new(children, type_ids)
+        end
       when Org::Apache::Arrow::Flatbuf::Map
         type = MapType.new(read_field(fb_field.children[0]))
       when Org::Apache::Arrow::Flatbuf::Binary
@@ -172,6 +238,10 @@ module ArrowFormat
         type = LargeBinaryType.singleton
       when Org::Apache::Arrow::Flatbuf::Utf8
         type = UTF8Type.singleton
+      when Org::Apache::Arrow::Flatbuf::LargeUtf8
+        type = LargeUTF8Type.singleton
+      when Org::Apache::Arrow::Flatbuf::FixedSizeBinary
+        type = FixedSizeBinaryType.new(fb_type.byte_width)
       end
       Field.new(fb_field.name, type, fb_field.nullable?)
     end
@@ -198,7 +268,18 @@ module ArrowFormat
 
       case field.type
       when BooleanType,
-           NumberType
+           NumberType,
+           TemporalType
+        values_buffer = buffers.shift
+        values = body.slice(values_buffer.offset, values_buffer.length)
+        field.type.build_array(length, validity, values)
+      when VariableSizeBinaryType
+        offsets_buffer = buffers.shift
+        values_buffer = buffers.shift
+        offsets = body.slice(offsets_buffer.offset, offsets_buffer.length)
+        values = body.slice(values_buffer.offset, values_buffer.length)
+        field.type.build_array(length, validity, offsets, values)
+      when FixedSizeBinaryType
         values_buffer = buffers.shift
         values = body.slice(values_buffer.offset, values_buffer.length)
         field.type.build_array(length, validity, values)
@@ -212,12 +293,22 @@ module ArrowFormat
           read_column(child, nodes, buffers, body)
         end
         field.type.build_array(length, validity, children)
-      when VariableSizeBinaryType
+      when DenseUnionType
+        # dense union type doesn't have validity.
+        types = validity
         offsets_buffer = buffers.shift
-        values_buffer = buffers.shift
         offsets = body.slice(offsets_buffer.offset, offsets_buffer.length)
-        values = body.slice(values_buffer.offset, values_buffer.length)
-        field.type.build_array(length, validity, offsets, values)
+        children = field.type.children.collect do |child|
+          read_column(child, nodes, buffers, body)
+        end
+        field.type.build_array(length, types, offsets, children)
+      when SparseUnionType
+        # sparse union type doesn't have validity.
+        types = validity
+        children = field.type.children.collect do |child|
+          read_column(child, nodes, buffers, body)
+        end
+        field.type.build_array(length, types, children)
       end
     end
   end
