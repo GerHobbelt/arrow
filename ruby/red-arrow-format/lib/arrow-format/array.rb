@@ -23,6 +23,7 @@ module ArrowFormat
     attr_reader :type
     attr_reader :size
     alias_method :length, :size
+    attr_reader :validity_buffer
     def initialize(type, size, validity_buffer)
       @type = type
       @size = size
@@ -31,7 +32,7 @@ module ArrowFormat
 
     def valid?(i)
       return true if @validity_buffer.nil?
-      validity_bitmap[i] == 1
+      validity_bitmap[i]
     end
 
     def null?(i)
@@ -43,8 +44,8 @@ module ArrowFormat
         0
       else
         # TODO: popcount
-        validity_bitmap.count do |bit|
-          bit == 1
+        validity_bitmap.count do |is_valid|
+          not is_valid
         end
       end
     end
@@ -56,8 +57,8 @@ module ArrowFormat
 
     def apply_validity(array)
       return array if @validity_buffer.nil?
-      validity_bitmap.each_with_index do |bit, i|
-        array[i] = nil if bit.zero?
+      validity_bitmap.each_with_index do |is_valid, i|
+        array[i] = nil unless is_valid
       end
       array
     end
@@ -94,9 +95,7 @@ module ArrowFormat
   class BooleanArray < PrimitiveArray
     def to_a
       @values_bitmap ||= Bitmap.new(@values_buffer, @size)
-      values = @values_bitmap.each.collect do |bit|
-        not bit.zero?
-      end
+      values = @values_bitmap.to_a
       apply_validity(values)
     end
   end
@@ -301,6 +300,13 @@ module ArrowFormat
       @values_buffer = values_buffer
     end
 
+    def each_buffer
+      return to_enum(__method__) unless block_given?
+
+      yield(@validity_buffer)
+      yield(@values_buffer)
+    end
+
     def to_a
       byte_width = @type.byte_width
       values = 0.step(@size * byte_width - 1, byte_width).collect do |offset|
@@ -363,10 +369,18 @@ module ArrowFormat
   end
 
   class VariableSizeListArray < Array
+    attr_reader :child
     def initialize(type, size, validity_buffer, offsets_buffer, child)
       super(type, size, validity_buffer)
       @offsets_buffer = offsets_buffer
       @child = child
+    end
+
+    def each_buffer(&block)
+      return to_enum(__method__) unless block_given?
+
+      yield(@validity_buffer)
+      yield(@offsets_buffer)
     end
 
     def to_a
@@ -396,9 +410,16 @@ module ArrowFormat
   end
 
   class StructArray < Array
+    attr_reader :children
     def initialize(type, size, validity_buffer, children)
       super(type, size, validity_buffer)
       @children = children
+    end
+
+    def each_buffer(&block)
+      return to_enum(__method__) unless block_given?
+
+      yield(@validity_buffer)
     end
 
     def to_a
@@ -434,6 +455,7 @@ module ArrowFormat
   end
 
   class UnionArray < Array
+    attr_reader :children
     def initialize(type, size, types_buffer, children)
       super(type, size, nil)
       @types_buffer = types_buffer
@@ -451,6 +473,13 @@ module ArrowFormat
       @offsets_buffer = offsets_buffer
     end
 
+    def each_buffer(&block)
+      return to_enum(__method__) unless block_given?
+
+      yield(@types_buffer)
+      yield(@offsets_buffer)
+    end
+
     def to_a
       children_values = @children.collect(&:to_a)
       types = @types_buffer.each(:S8, 0, @size)
@@ -463,6 +492,12 @@ module ArrowFormat
   end
 
   class SparseUnionArray < UnionArray
+    def each_buffer(&block)
+      return to_enum(__method__) unless block_given?
+
+      yield(@types_buffer)
+    end
+
     def to_a
       children_values = @children.collect(&:to_a)
       @types_buffer.each(:S8, 0, @size).with_index.collect do |(_, type), i|

@@ -16,6 +16,14 @@
 # under the License.
 
 module WriterTests
+  def convert_time_unit(red_arrow_time_unit)
+    if red_arrow_time_unit.nick == "second"
+      red_arrow_time_unit.nick.to_sym
+    else
+      :"#{red_arrow_time_unit.nick}second"
+    end
+  end
+
   def convert_type(red_arrow_type)
     case red_arrow_type
     when Arrow::NullDataType
@@ -46,6 +54,21 @@ module WriterTests
       ArrowFormat::Date32Type.singleton
     when Arrow::Date64DataType
       ArrowFormat::Date64Type.singleton
+    when Arrow::Time32DataType
+      ArrowFormat::Time32Type.new(convert_time_unit(red_arrow_type.unit))
+    when Arrow::Time64DataType
+      ArrowFormat::Time64Type.new(convert_time_unit(red_arrow_type.unit))
+    when Arrow::TimestampDataType
+      ArrowFormat::TimestampType.new(convert_time_unit(red_arrow_type.unit),
+                                     red_arrow_type.time_zone&.identifier)
+    when Arrow::MonthIntervalDataType
+      ArrowFormat::YearMonthIntervalType.singleton
+    when Arrow::DayTimeIntervalDataType
+      ArrowFormat::DayTimeIntervalType.singleton
+    when Arrow::MonthDayNanoIntervalDataType
+      ArrowFormat::MonthDayNanoIntervalType.singleton
+    when Arrow::DurationDataType
+      ArrowFormat::DurationType.new(convert_time_unit(red_arrow_type.unit))
     when Arrow::BinaryDataType
       ArrowFormat::BinaryType.singleton
     when Arrow::LargeBinaryDataType
@@ -54,9 +77,45 @@ module WriterTests
       ArrowFormat::UTF8Type.singleton
     when Arrow::LargeStringDataType
       ArrowFormat::LargeUTF8Type.singleton
+    when Arrow::Decimal128DataType
+      ArrowFormat::Decimal128Type.new(red_arrow_type.precision,
+                                      red_arrow_type.scale)
+    when Arrow::Decimal256DataType
+      ArrowFormat::Decimal256Type.new(red_arrow_type.precision,
+                                      red_arrow_type.scale)
+    when Arrow::FixedSizeBinaryDataType
+      ArrowFormat::FixedSizeBinaryType.new(red_arrow_type.byte_width)
+    when Arrow::MapDataType
+      ArrowFormat::MapType.new(convert_field(red_arrow_type.field))
+    when Arrow::ListDataType
+      ArrowFormat::ListType.new(convert_field(red_arrow_type.field))
+    when Arrow::LargeListDataType
+      ArrowFormat::LargeListType.new(convert_field(red_arrow_type.field))
+    when Arrow::StructDataType
+      fields = red_arrow_type.fields.collect do |field|
+        convert_field(field)
+      end
+      ArrowFormat::StructType.new(fields)
+    when Arrow::DenseUnionDataType
+      fields = red_arrow_type.fields.collect do |field|
+        convert_field(field)
+      end
+      ArrowFormat::DenseUnionType.new(fields, red_arrow_type.type_codes)
+    when Arrow::SparseUnionDataType
+      fields = red_arrow_type.fields.collect do |field|
+        convert_field(field)
+      end
+      ArrowFormat::SparseUnionType.new(fields, red_arrow_type.type_codes)
     else
       raise "Unsupported type: #{red_arrow_type.inspect}"
     end
+  end
+
+  def convert_field(red_arrow_field)
+    ArrowFormat::Field.new(red_arrow_field.name,
+                           convert_type(red_arrow_field.data_type),
+                           red_arrow_field.nullable?,
+                           nil)
   end
 
   def convert_buffer(buffer)
@@ -78,6 +137,40 @@ module WriterTests
                        convert_buffer(red_arrow_array.null_bitmap),
                        convert_buffer(red_arrow_array.offsets_buffer),
                        convert_buffer(red_arrow_array.data_buffer))
+    when ArrowFormat::FixedSizeBinaryType
+      type.build_array(red_arrow_array.size,
+                       convert_buffer(red_arrow_array.null_bitmap),
+                       convert_buffer(red_arrow_array.data_buffer))
+    when ArrowFormat::VariableSizeListType
+      type.build_array(red_arrow_array.size,
+                       convert_buffer(red_arrow_array.null_bitmap),
+                       convert_buffer(red_arrow_array.value_offsets_buffer),
+                       convert_array(red_arrow_array.values_raw))
+    when ArrowFormat::StructType
+      children = red_arrow_array.fields.collect do |red_arrow_field|
+        convert_array(red_arrow_field)
+      end
+      type.build_array(red_arrow_array.size,
+                       convert_buffer(red_arrow_array.null_bitmap),
+                       children)
+    when ArrowFormat::DenseUnionType
+      types_buffer = convert_buffer(red_arrow_array.type_ids.data_buffer)
+      offsets_buffer = convert_buffer(red_arrow_array.value_offsets.data_buffer)
+      children = red_arrow_array.fields.collect do |red_arrow_field|
+        convert_array(red_arrow_field)
+      end
+      type.build_array(red_arrow_array.size,
+                       types_buffer,
+                       offsets_buffer,
+                       children)
+    when ArrowFormat::SparseUnionType
+      types_buffer = convert_buffer(red_arrow_array.type_ids.data_buffer)
+      children = red_arrow_array.fields.collect do |red_arrow_field|
+        convert_array(red_arrow_field)
+      end
+      type.build_array(red_arrow_array.size,
+                       types_buffer,
+                       children)
     else
       raise "Unsupported array #{red_arrow_array.inspect}"
     end
@@ -268,6 +361,359 @@ module WriterTests
           end
         end
 
+        sub_test_case("Time32(:second)") do
+          def setup(&block)
+            @time_00_00_10 = 10
+            @time_00_01_10 = 60 + 10
+            super(&block)
+          end
+
+          def build_array
+            Arrow::Time32Array.new(:second,
+                                   [@time_00_00_10, nil, @time_00_01_10])
+          end
+
+          def test_write
+            assert_equal([
+                           Arrow::Time.new(:second, @time_00_00_10),
+                           nil,
+                           Arrow::Time.new(:second, @time_00_01_10),
+                         ],
+                         @values)
+          end
+        end
+
+        sub_test_case("Time32(:millisecond)") do
+          def setup(&block)
+            @time_00_00_10_000 = 10 * 1000
+            @time_00_01_10_000 = (60 + 10) * 1000
+            super(&block)
+          end
+
+          def build_array
+            Arrow::Time32Array.new(:milli,
+                                   [
+                                     @time_00_00_10_000,
+                                     nil,
+                                     @time_00_01_10_000,
+                                   ])
+          end
+
+          def test_write
+            assert_equal([
+                           Arrow::Time.new(:milli, @time_00_00_10_000),
+                           nil,
+                           Arrow::Time.new(:milli, @time_00_01_10_000),
+                         ],
+                         @values)
+          end
+        end
+
+        sub_test_case("Time64(:microsecond)") do
+          def setup(&block)
+            @time_00_00_10_000_000 = 10 * 1_000_000
+            @time_00_01_10_000_000 = (60 + 10) * 1_000_000
+            super(&block)
+          end
+
+          def build_array
+            Arrow::Time64Array.new(:micro,
+                                   [
+                                     @time_00_00_10_000_000,
+                                     nil,
+                                     @time_00_01_10_000_000,
+                                   ])
+          end
+
+          def test_write
+            assert_equal([
+                           Arrow::Time.new(:micro, @time_00_00_10_000_000),
+                           nil,
+                           Arrow::Time.new(:micro, @time_00_01_10_000_000),
+                         ],
+                         @values)
+          end
+        end
+
+        sub_test_case("Time64(:nanosecond)") do
+          def setup(&block)
+            @time_00_00_10_000_000_000 = 10 * 1_000_000_000
+            @time_00_01_10_000_000_000 = (60 + 10) * 1_000_000_000
+            super(&block)
+          end
+
+          def build_array
+            Arrow::Time64Array.new(:nano,
+                                   [
+                                     @time_00_00_10_000_000_000,
+                                     nil,
+                                     @time_00_01_10_000_000_000,
+                                   ])
+          end
+
+          def test_write
+            assert_equal([
+                           Arrow::Time.new(:nano, @time_00_00_10_000_000_000),
+                           nil,
+                           Arrow::Time.new(:nano, @time_00_01_10_000_000_000),
+                         ],
+                         @values)
+          end
+        end
+
+        sub_test_case("Timestamp(:second)") do
+          def setup(&block)
+            @timestamp_2019_11_17_15_09_11 = 1574003351
+            @timestamp_2025_12_16_05_33_58 = 1765863238
+            super(&block)
+          end
+
+          def build_array
+            Arrow::TimestampArray.new(:second,
+                                      [
+                                        @timestamp_2019_11_17_15_09_11,
+                                        nil,
+                                        @timestamp_2025_12_16_05_33_58,
+                                      ])
+          end
+
+          def test_write
+            assert_equal([
+                           Time.at(@timestamp_2019_11_17_15_09_11),
+                           nil,
+                           Time.at(@timestamp_2025_12_16_05_33_58),
+                         ],
+                         @values)
+          end
+        end
+
+        sub_test_case("Timestamp(:millisecond)") do
+          def setup(&block)
+            @timestamp_2019_11_17_15_09_11 = 1574003351 * 1_000
+            @timestamp_2025_12_16_05_33_58 = 1765863238 * 1_000
+            super(&block)
+          end
+
+          def build_array
+            Arrow::TimestampArray.new(:milli,
+                                      [
+                                        @timestamp_2019_11_17_15_09_11,
+                                        nil,
+                                        @timestamp_2025_12_16_05_33_58,
+                                      ])
+          end
+
+          def test_write
+            assert_equal([
+                           Time.at(@timestamp_2019_11_17_15_09_11 / 1_000),
+                           nil,
+                           Time.at(@timestamp_2025_12_16_05_33_58 / 1_000),
+                         ],
+                         @values)
+          end
+        end
+
+        sub_test_case("Timestamp(:microsecond)") do
+          def setup(&block)
+            @timestamp_2019_11_17_15_09_11 = 1574003351 * 1_000_000
+            @timestamp_2025_12_16_05_33_58 = 1765863238 * 1_000_000
+            super(&block)
+          end
+
+          def build_array
+            Arrow::TimestampArray.new(:micro,
+                                      [
+                                        @timestamp_2019_11_17_15_09_11,
+                                        nil,
+                                        @timestamp_2025_12_16_05_33_58,
+                                      ])
+          end
+
+          def test_write
+            assert_equal([
+                           Time.at(@timestamp_2019_11_17_15_09_11 / 1_000_000),
+                           nil,
+                           Time.at(@timestamp_2025_12_16_05_33_58 / 1_000_000),
+                         ],
+                         @values)
+          end
+        end
+
+        sub_test_case("Timestamp(:nanosecond)") do
+          def setup(&block)
+            @timestamp_2019_11_17_15_09_11 = 1574003351 * 1_000_000_000
+            @timestamp_2025_12_16_05_33_58 = 1765863238 * 1_000_000_000
+            super(&block)
+          end
+
+          def build_array
+            Arrow::TimestampArray.new(:nano,
+                                      [
+                                        @timestamp_2019_11_17_15_09_11,
+                                        nil,
+                                        @timestamp_2025_12_16_05_33_58,
+                                      ])
+          end
+
+          def test_write
+            assert_equal([
+                           Time.at(@timestamp_2019_11_17_15_09_11 / 1_000_000_000),
+                           nil,
+                           Time.at(@timestamp_2025_12_16_05_33_58 / 1_000_000_000),
+                         ],
+                         @values)
+          end
+        end
+
+        sub_test_case("Timestamp(time_zone)") do
+          def setup(&block)
+            @time_zone = "UTC"
+            @timestamp_2019_11_17_15_09_11 = 1574003351
+            @timestamp_2025_12_16_05_33_58 = 1765863238
+            super(&block)
+          end
+
+          def build_array
+            data_type = Arrow::TimestampDataType.new(:second, @time_zone)
+            Arrow::TimestampArray.new(data_type,
+                                      [
+                                        @timestamp_2019_11_17_15_09_11,
+                                        nil,
+                                        @timestamp_2025_12_16_05_33_58,
+                                      ])
+          end
+
+          def test_type
+            assert_equal([Arrow::TimeUnit::SECOND, @time_zone],
+                         [@type.unit, @type.time_zone&.identifier])
+          end
+        end
+
+        sub_test_case("YearMonthInterval") do
+          def build_array
+            Arrow::MonthIntervalArray.new([0, nil, 100])
+          end
+
+          def test_write
+            assert_equal([0, nil, 100],
+                         @values)
+          end
+        end
+
+        sub_test_case("DayTimeInterval") do
+          def build_array
+            Arrow::DayTimeIntervalArray.new([
+                                              {day: 1, millisecond: 100},
+                                              nil,
+                                              {day: 3, millisecond: 300},
+                                            ])
+          end
+
+          def test_write
+            assert_equal([
+                           {day: 1, millisecond: 100},
+                           nil,
+                           {day: 3, millisecond: 300},
+                         ],
+                         @values)
+          end
+        end
+
+        sub_test_case("MonthDayNanoInterval") do
+          def build_array
+            Arrow::MonthDayNanoIntervalArray.new([
+                                                   {
+                                                     month: 1,
+                                                     day: 1,
+                                                     nanosecond: 100,
+                                                   },
+                                                   nil,
+                                                   {
+                                                     month: 3,
+                                                     day: 3,
+                                                     nanosecond: 300,
+                                                   },
+                                                 ])
+          end
+
+          def test_write
+            assert_equal([
+                           {
+                             month: 1,
+                             day: 1,
+                             nanosecond: 100,
+                           },
+                           nil,
+                           {
+                             month: 3,
+                             day: 3,
+                             nanosecond: 300,
+                           },
+                         ],
+                         @values)
+          end
+        end
+
+        sub_test_case("Duration(:second)") do
+          def build_array
+            Arrow::DurationArray.new(:second, [0, nil, 100])
+          end
+
+          def test_write
+            assert_equal([0, nil, 100],
+                         @values)
+          end
+
+          def test_type
+            assert_equal(Arrow::TimeUnit::SECOND, @type.unit)
+          end
+        end
+
+        sub_test_case("Duration(:millisecond)") do
+          def build_array
+            Arrow::DurationArray.new(:milli, [0, nil, 100])
+          end
+
+          def test_write
+            assert_equal([0, nil, 100],
+                         @values)
+          end
+
+          def test_type
+            assert_equal(Arrow::TimeUnit::MILLI, @type.unit)
+          end
+        end
+
+        sub_test_case("Duration(:microsecond)") do
+          def build_array
+            Arrow::DurationArray.new(:micro, [0, nil, 100])
+          end
+
+          def test_write
+            assert_equal([0, nil, 100],
+                         @values)
+          end
+
+          def test_type
+            assert_equal(Arrow::TimeUnit::MICRO, @type.unit)
+          end
+        end
+
+        sub_test_case("Duration(:nanosecond)") do
+          def build_array
+            Arrow::DurationArray.new(:nano, [0, nil, 100])
+          end
+
+          def test_write
+            assert_equal([0, nil, 100],
+                         @values)
+          end
+
+          def test_type
+            assert_equal(Arrow::TimeUnit::NANO, @type.unit)
+          end
+        end
+
         sub_test_case("Binary") do
           def build_array
             Arrow::BinaryArray.new(["Hello".b, nil, "World".b])
@@ -311,6 +757,188 @@ module WriterTests
                          @values)
           end
         end
+
+        sub_test_case("FixedSizeBinary") do
+          def build_array
+            data_type = Arrow::FixedSizeBinaryDataType.new(4)
+            Arrow::FixedSizeBinaryArray.new(data_type,
+                                            ["0124".b, nil, "abcd".b])
+          end
+
+          def test_write
+            assert_equal(["0124".b, nil, "abcd".b],
+                         @values)
+          end
+        end
+
+        sub_test_case("Decimal128") do
+          def build_array
+            @positive_small = "1.200"
+            @positive_large = ("1234567890" * 3) + "12345.678"
+            @negative_small = "-1.200"
+            @negative_large = "-" + ("1234567890" * 3) + "12345.678"
+            Arrow::Decimal128Array.new({precision: 38, scale: 3},
+                                       [
+                                         @positive_large,
+                                         @positive_small,
+                                         nil,
+                                         @negative_small,
+                                         @negative_large,
+                                       ])
+          end
+
+          def test_write
+            assert_equal([
+                           BigDecimal(@positive_large),
+                           BigDecimal(@positive_small),
+                           nil,
+                           BigDecimal(@negative_small),
+                           BigDecimal(@negative_large),
+                         ],
+                         @values)
+          end
+        end
+
+        sub_test_case("Decimal256") do
+          def build_array
+            @positive_small = "1.200"
+            @positive_large = ("1234567890" * 7) + "123.456"
+            @negative_small = "-1.200"
+            @negative_large = "-" + ("1234567890" * 7) + "123.456"
+            Arrow::Decimal256Array.new({precision: 76, scale: 3},
+                                       [
+                                         @positive_large,
+                                         @positive_small,
+                                         nil,
+                                         @negative_small,
+                                         @negative_large,
+                                       ])
+          end
+
+          def test_write
+            assert_equal([
+                           BigDecimal(@positive_large),
+                           BigDecimal(@positive_small),
+                           nil,
+                           BigDecimal(@negative_small),
+                           BigDecimal(@negative_large),
+                         ],
+                         @values)
+          end
+        end
+
+        sub_test_case("List") do
+          def build_array
+            data_type = Arrow::ListDataType.new(name: "count", type: :int8)
+            Arrow::ListArray.new(data_type, [[-128, 127], nil, [-1, 0, 1]])
+          end
+
+          def test_write
+            assert_equal([[-128, 127], nil, [-1, 0, 1]],
+                         @values)
+          end
+        end
+
+        sub_test_case("LargeList") do
+          def build_array
+            data_type = Arrow::LargeListDataType.new(name: "count",
+                                                     type: :int8)
+            Arrow::LargeListArray.new(data_type,
+                                      [[-128, 127], nil, [-1, 0, 1]])
+          end
+
+          def test_write
+            assert_equal([[-128, 127], nil, [-1, 0, 1]],
+                         @values)
+          end
+        end
+
+        sub_test_case("Map") do
+          def build_array
+            data_type = Arrow::MapDataType.new(:string, :int8)
+            Arrow::MapArray.new(data_type,
+                                [
+                                  {"a" => -128, "b" => 127},
+                                  nil,
+                                  {"c" => nil},
+                                ])
+          end
+
+          def test_write
+            assert_equal([
+                           {"a" => -128, "b" => 127},
+                           nil,
+                           {"c" => nil},
+                         ],
+                         @values)
+          end
+        end
+
+        sub_test_case("Struct") do
+          def build_array
+            data_type = Arrow::StructDataType.new(count: :int8,
+                                                  visible: :boolean)
+            Arrow::StructArray.new(data_type,
+                                   [[-128, nil], nil, [nil, true]])
+          end
+
+          def test_write
+            assert_equal([
+                           {"count" => -128, "visible" => nil},
+                           nil,
+                           {"count" => nil, "visible" => true},
+                         ],
+                         @values)
+          end
+        end
+
+        sub_test_case("DenseUnion") do
+          def build_array
+            fields = [
+              Arrow::Field.new("number", :int8),
+              Arrow::Field.new("text", :string),
+            ]
+            type_ids = [11, 13]
+            data_type = Arrow::DenseUnionDataType.new(fields, type_ids)
+            types = Arrow::Int8Array.new([11, 13, 11, 13, 13])
+            value_offsets = Arrow::Int32Array.new([0, 0, 1, 1, 2])
+            children = [
+              Arrow::Int8Array.new([1, nil]),
+              Arrow::StringArray.new(["a", "b", "c"])
+            ]
+            Arrow::DenseUnionArray.new(data_type,
+                                       types,
+                                       value_offsets,
+                                       children)
+          end
+
+          def test_write
+            assert_equal([1, "a", nil, "b", "c"],
+                         @values)
+          end
+        end
+
+        sub_test_case("SparseUnion") do
+          def build_array
+            fields = [
+              Arrow::Field.new("number", :int8),
+              Arrow::Field.new("text", :string),
+            ]
+            type_ids = [11, 13]
+            data_type = Arrow::SparseUnionDataType.new(fields, type_ids)
+            types = Arrow::Int8Array.new([11, 13, 11, 13, 11])
+            children = [
+              Arrow::Int8Array.new([1, nil, nil, nil, 5]),
+              Arrow::StringArray.new([nil, "b", nil, "d", nil])
+            ]
+            Arrow::SparseUnionArray.new(data_type, types, children)
+          end
+
+          def test_write
+            assert_equal([1, "b", nil, "d", 5],
+                         @values)
+          end
+        end
       end
     end
   end
@@ -340,6 +968,7 @@ class TestFileWriter < Test::Unit::TestCase
       end
       data = File.open(path, "rb", &:read).freeze
       table = Arrow::Table.load(Arrow::Buffer.new(data), format: :arrow)
+      @type = table.value.data_type
       @values = table.value.values
     end
   end
@@ -369,6 +998,7 @@ class TestStreamingWriter < Test::Unit::TestCase
       end
       data = File.open(path, "rb", &:read).freeze
       table = Arrow::Table.load(Arrow::Buffer.new(data), format: :arrows)
+      @type = table.value.data_type
       @values = table.value.values
     end
   end

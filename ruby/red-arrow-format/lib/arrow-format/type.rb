@@ -388,14 +388,27 @@ module ArrowFormat
   end
 
   class TimeType < TemporalType
+    attr_reader :bit_width
     attr_reader :unit
-    def initialize(unit)
+    def initialize(bit_width, unit)
       super()
+      @bit_width = bit_width
       @unit = unit
+    end
+
+    def to_flatbuffers
+      fb_type = FB::Time::Data.new
+      fb_type.bit_width = @bit_width
+      fb_type.unit = FB::TimeUnit.try_convert(@unit.to_s.upcase)
+      fb_type
     end
   end
 
   class Time32Type < TimeType
+    def initialize(unit)
+      super(32, unit)
+    end
+
     def name
       "Time32"
     end
@@ -406,6 +419,10 @@ module ArrowFormat
   end
 
   class Time64Type < TimeType
+    def initialize(unit)
+      super(64, unit)
+    end
+
     def name
       "Time64"
     end
@@ -417,11 +434,11 @@ module ArrowFormat
 
   class TimestampType < TemporalType
     attr_reader :unit
-    attr_reader :timezone
-    def initialize(unit, timezone)
+    attr_reader :time_zone
+    def initialize(unit, time_zone)
       super()
       @unit = unit
-      @timezone = timezone
+      @time_zone = time_zone
     end
 
     def name
@@ -431,12 +448,40 @@ module ArrowFormat
     def build_array(size, validity_buffer, values_buffer)
       TimestampArray.new(self, size, validity_buffer, values_buffer)
     end
+
+    def to_flatbuffers
+      fb_type = FB::Timestamp::Data.new
+      fb_type.unit = FB::TimeUnit.try_convert(@unit.to_s.upcase)
+      fb_type.timezone = @time_zone
+      fb_type
+    end
   end
 
   class IntervalType < TemporalType
+    class << self
+      def singleton
+        @singleton ||= new
+      end
+    end
+
+    attr_reader :unit
+    def initialize(unit)
+      super()
+      @unit = unit
+    end
+
+    def to_flatbuffers
+      fb_type = FB::Interval::Data.new
+      fb_type.unit = FB::IntervalUnit.try_convert(@unit.to_s.upcase)
+      fb_type
+    end
   end
 
   class YearMonthIntervalType < IntervalType
+    def initialize
+      super(:year_month)
+    end
+
     def name
       "YearMonthInterval"
     end
@@ -447,6 +492,10 @@ module ArrowFormat
   end
 
   class DayTimeIntervalType < IntervalType
+    def initialize
+      super(:day_time)
+    end
+
     def name
       "DayTimeInterval"
     end
@@ -457,6 +506,10 @@ module ArrowFormat
   end
 
   class MonthDayNanoIntervalType < IntervalType
+    def initialize
+      super(:month_day_nano)
+    end
+
     def name
       "MonthDayNanoInterval"
     end
@@ -482,6 +535,12 @@ module ArrowFormat
 
     def build_array(size, validity_buffer, values_buffer)
       DurationArray.new(self, size, validity_buffer, values_buffer)
+    end
+
+    def to_flatbuffers
+      fb_type = FB::Duration::Data.new
+      fb_type.unit = FB::TimeUnit.try_convert(@unit.to_s.upcase)
+      fb_type
     end
   end
 
@@ -594,6 +653,12 @@ module ArrowFormat
     def build_array(size, validity_buffer, values_buffer)
       FixedSizeBinaryArray.new(self, size, validity_buffer, values_buffer)
     end
+
+    def to_flatbuffers
+      fb_type = FB::FixedSizeBinary::Data.new
+      fb_type.byte_width = @byte_width
+      fb_type
+    end
   end
 
   class DecimalType < FixedSizeBinaryType
@@ -603,6 +668,14 @@ module ArrowFormat
       super(byte_width)
       @precision = precision
       @scale = scale
+    end
+
+    def to_flatbuffers
+      fb_type = FB::Decimal::Data.new
+      fb_type.bit_width = @byte_width * 8
+      fb_type.precision = @precision
+      fb_type.scale = @scale
+      fb_type
     end
   end
 
@@ -640,7 +713,6 @@ module ArrowFormat
       super()
       @child = child
     end
-
   end
 
   class ListType < VariableSizeListType
@@ -651,6 +723,10 @@ module ArrowFormat
     def build_array(size, validity_buffer, offsets_buffer, child)
       ListArray.new(self, size, validity_buffer, offsets_buffer, child)
     end
+
+    def to_flatbuffers
+      FB::List::Data.new
+    end
   end
 
   class LargeListType < VariableSizeListType
@@ -660,6 +736,10 @@ module ArrowFormat
 
     def build_array(size, validity_buffer, offsets_buffer, child)
       LargeListArray.new(self, size, validity_buffer, offsets_buffer, child)
+    end
+
+    def to_flatbuffers
+      FB::LargeList::Data.new
     end
   end
 
@@ -676,6 +756,10 @@ module ArrowFormat
 
     def build_array(size, validity_buffer, children)
       StructArray.new(self, size, validity_buffer, children)
+    end
+
+    def to_flatbuffers
+      FB::Struct::Data.new
     end
   end
 
@@ -707,13 +791,18 @@ module ArrowFormat
     def build_array(size, validity_buffer, offsets_buffer, child)
       MapArray.new(self, size, validity_buffer, offsets_buffer, child)
     end
+
+    def to_flatbuffers
+      FB::Map::Data.new
+    end
   end
 
   class UnionType < Type
     attr_reader :children
     attr_reader :type_ids
-    def initialize(children, type_ids)
+    def initialize(mode, children, type_ids)
       super()
+      @mode = mode
       @children = children
       @type_ids = type_ids
       @type_indexes = {}
@@ -722,9 +811,20 @@ module ArrowFormat
     def resolve_type_index(type)
       @type_indexes[type] ||= @type_ids.index(type)
     end
+
+    def to_flatbuffers
+      fb_type = FB::Union::Data.new
+      fb_type.mode = FB::UnionMode.try_convert(@mode.to_s.capitalize)
+      fb_type.type_ids = @type_ids
+      fb_type
+    end
   end
 
   class DenseUnionType < UnionType
+    def initialize(children, type_ids)
+      super(:dense, children, type_ids)
+    end
+
     def name
       "DenseUnion"
     end
@@ -735,6 +835,10 @@ module ArrowFormat
   end
 
   class SparseUnionType < UnionType
+    def initialize(children, type_ids)
+      super(:sparse, children, type_ids)
+    end
+
     def name
       "SparseUnion"
     end
