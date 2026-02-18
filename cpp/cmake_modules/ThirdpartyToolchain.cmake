@@ -2867,6 +2867,13 @@ function(build_re2)
 
   fetchcontent_makeavailable(re2)
 
+  # Suppress -Wnested-anon-types warnings from RE2's use of anonymous types
+  # in anonymous unions (a compiler extension).
+  # See: https://github.com/apache/arrow/issues/48973
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    target_compile_options(re2 PRIVATE -Wno-nested-anon-types)
+  endif()
+
   if(CMAKE_VERSION VERSION_LESS 3.28)
     set_property(DIRECTORY ${re2_SOURCE_DIR} PROPERTY EXCLUDE_FROM_ALL TRUE)
   endif()
@@ -3366,10 +3373,6 @@ function(build_google_cloud_cpp_storage)
   # List of dependencies taken from https://github.com/googleapis/google-cloud-cpp/blob/main/doc/packaging.md
   build_crc32c_once()
 
-  # Curl is required on all platforms, but building it internally might also trip over S3's copy.
-  # For now, force its inclusion from the underlying system or fail.
-  find_curl()
-
   fetchcontent_declare(google_cloud_cpp
                        ${FC_DECLARE_COMMON_OPTIONS}
                        URL ${google_cloud_cpp_storage_SOURCE_URL}
@@ -3453,6 +3456,9 @@ if(ARROW_WITH_GOOGLE_CLOUD_CPP)
     )
   endif()
 
+  # curl is required on all platforms. We always use system curl to
+  # avoid conflict.
+  find_curl()
   resolve_dependency(google_cloud_cpp_storage PC_PACKAGE_NAMES google_cloud_cpp_storage)
   get_target_property(google_cloud_cpp_storage_INCLUDE_DIR google-cloud-cpp::storage
                       INTERFACE_INCLUDE_DIRECTORIES)

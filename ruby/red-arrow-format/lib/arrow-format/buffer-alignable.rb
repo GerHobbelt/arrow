@@ -15,12 +15,21 @@
 # specific language governing permissions and limitations
 # under the License.
 
-module ArrowCUDA
-  VERSION = "24.0.0-SNAPSHOT"
+require_relative "flat-buffers"
 
-  module Version
-    numbers, TAG = VERSION.split("-")
-    MAJOR, MINOR, MICRO = numbers.split(".").collect(&:to_i)
-    STRING = VERSION
+module ArrowFormat
+  module BufferAlignable
+    include FlatBuffers::Alignable
+
+    BUFFER_ALIGNMENT_SIZE = 64
+
+    private
+    def buffer_padding_size(buffer)
+      compute_padding_size(buffer.size, BUFFER_ALIGNMENT_SIZE)
+    end
+
+    def aligned_buffer_size(buffer)
+      buffer.size + buffer_padding_size(buffer)
+    end
   end
 end

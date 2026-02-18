@@ -33,12 +33,15 @@ module ArrowFormat
       NullArray.new(self, size)
     end
 
-    def to_flat_buffers
+    def to_flatbuffers
       FB::Null::Data.new
     end
   end
 
-  class BooleanType < Type
+  class PrimitiveType < Type
+  end
+
+  class BooleanType < PrimitiveType
     class << self
       def singleton
         @singleton ||= new
@@ -52,9 +55,13 @@ module ArrowFormat
     def build_array(size, validity_buffer, values_buffer)
       BooleanArray.new(self, size, validity_buffer, values_buffer)
     end
+
+    def to_flatbuffers
+      FB::Bool::Data.new
+    end
   end
 
-  class NumberType < Type
+  class NumberType < PrimitiveType
   end
 
   class IntType < NumberType
@@ -67,6 +74,13 @@ module ArrowFormat
 
     def signed?
       @signed
+    end
+
+    def to_flatbuffers
+      fb_type = FB::Int::Data.new
+      fb_type.bit_width = @bit_width
+      fb_type.signed = @signed
+      fb_type
     end
   end
 
@@ -268,6 +282,12 @@ module ArrowFormat
       super()
       @precision = precision
     end
+
+    def to_flatbuffers
+      fb_type = FB::FloatingPoint::Data.new
+      fb_type.precision = FB::Precision.try_convert(@precision.to_s.upcase)
+      fb_type
+    end
   end
 
   class Float32Type < FloatingPointType
@@ -310,10 +330,21 @@ module ArrowFormat
     end
   end
 
-  class TemporalType < Type
+  class TemporalType < PrimitiveType
   end
 
   class DateType < TemporalType
+    attr_reader :unit
+    def initialize(unit)
+      super()
+      @unit = unit
+    end
+
+    def to_flatbuffers
+      fb_type = FB::Date::Data.new
+      fb_type.unit = FB::DateUnit.try_convert(@unit.to_s.upcase)
+      fb_type
+    end
   end
 
   class Date32Type < DateType
@@ -321,6 +352,10 @@ module ArrowFormat
       def singleton
         @singleton ||= new
       end
+    end
+
+    def initialize
+      super(:day)
     end
 
     def name
@@ -337,6 +372,10 @@ module ArrowFormat
       def singleton
         @singleton ||= new
       end
+    end
+
+    def initialize
+      super(:millisecond)
     end
 
     def name
@@ -461,7 +500,15 @@ module ArrowFormat
     end
 
     def build_array(size, validity_buffer, offsets_buffer, values_buffer)
-      BinaryArray.new(self, size, validity_buffer, offsets_buffer, values_buffer)
+      BinaryArray.new(self,
+                      size,
+                      validity_buffer,
+                      offsets_buffer,
+                      values_buffer)
+    end
+
+    def to_flatbuffers
+      FB::Binary::Data.new
     end
   end
 
@@ -483,6 +530,10 @@ module ArrowFormat
                            offsets_buffer,
                            values_buffer)
     end
+
+    def to_flatbuffers
+      FB::LargeBinary::Data.new
+    end
   end
 
   class UTF8Type < VariableSizeBinaryType
@@ -498,6 +549,10 @@ module ArrowFormat
 
     def build_array(size, validity_buffer, offsets_buffer, values_buffer)
       UTF8Array.new(self, size, validity_buffer, offsets_buffer, values_buffer)
+    end
+
+    def to_flatbuffers
+      FB::Utf8::Data.new
     end
   end
 
@@ -518,6 +573,10 @@ module ArrowFormat
                          validity_buffer,
                          offsets_buffer,
                          values_buffer)
+    end
+
+    def to_flatbuffers
+      FB::LargeUtf8::Data.new
     end
   end
 
