@@ -1290,4 +1290,189 @@ GARROW_AVAILABLE_IN_23_0
 GArrowExtractRegexSpanOptions *
 garrow_extract_regex_span_options_new(void);
 
+/**
+ * GArrowJoinNullHandlingBehavior:
+ * @GARROW_JOIN_NULL_HANDLING_EMIT_NULL: A null in any input results in a null in the
+ * output.
+ * @GARROW_JOIN_NULL_HANDLING_SKIP: Nulls in inputs are skipped.
+ * @GARROW_JOIN_NULL_HANDLING_REPLACE: Nulls in inputs are replaced with the replacement
+ * string.
+ *
+ * They correspond to the values of
+ * `arrow::compute::JoinOptions::NullHandlingBehavior`.
+ *
+ * Since: 23.0.0
+ */
+typedef enum {
+  GARROW_JOIN_NULL_HANDLING_EMIT_NULL,
+  GARROW_JOIN_NULL_HANDLING_SKIP,
+  GARROW_JOIN_NULL_HANDLING_REPLACE,
+} GArrowJoinNullHandlingBehavior;
+
+#define GARROW_TYPE_JOIN_OPTIONS (garrow_join_options_get_type())
+GARROW_AVAILABLE_IN_23_0
+G_DECLARE_DERIVABLE_TYPE(
+  GArrowJoinOptions, garrow_join_options, GARROW, JOIN_OPTIONS, GArrowFunctionOptions)
+struct _GArrowJoinOptionsClass
+{
+  GArrowFunctionOptionsClass parent_class;
+};
+
+GARROW_AVAILABLE_IN_23_0
+GArrowJoinOptions *
+garrow_join_options_new(void);
+
+#define GARROW_TYPE_LIST_FLATTEN_OPTIONS (garrow_list_flatten_options_get_type())
+GARROW_AVAILABLE_IN_23_0
+G_DECLARE_DERIVABLE_TYPE(GArrowListFlattenOptions,
+                         garrow_list_flatten_options,
+                         GARROW,
+                         LIST_FLATTEN_OPTIONS,
+                         GArrowFunctionOptions)
+struct _GArrowListFlattenOptionsClass
+{
+  GArrowFunctionOptionsClass parent_class;
+};
+
+GARROW_AVAILABLE_IN_23_0
+GArrowListFlattenOptions *
+garrow_list_flatten_options_new(void);
+
+/**
+ * GArrowMapLookupOccurrence:
+ * @GARROW_MAP_LOOKUP_OCCURRENCE_FIRST: Return the first matching value.
+ * @GARROW_MAP_LOOKUP_OCCURRENCE_LAST: Return the last matching value.
+ * @GARROW_MAP_LOOKUP_OCCURRENCE_ALL: Return all matching values.
+ *
+ * They correspond to the values of
+ * `arrow::compute::MapLookupOptions::Occurrence`.
+ *
+ * Since: 23.0.0
+ */
+typedef enum {
+  GARROW_MAP_LOOKUP_OCCURRENCE_FIRST,
+  GARROW_MAP_LOOKUP_OCCURRENCE_LAST,
+  GARROW_MAP_LOOKUP_OCCURRENCE_ALL,
+} GArrowMapLookupOccurrence;
+
+#define GARROW_TYPE_MAP_LOOKUP_OPTIONS (garrow_map_lookup_options_get_type())
+GARROW_AVAILABLE_IN_23_0
+G_DECLARE_DERIVABLE_TYPE(GArrowMapLookupOptions,
+                         garrow_map_lookup_options,
+                         GARROW,
+                         MAP_LOOKUP_OPTIONS,
+                         GArrowFunctionOptions)
+struct _GArrowMapLookupOptionsClass
+{
+  GArrowFunctionOptionsClass parent_class;
+};
+
+GARROW_AVAILABLE_IN_23_0
+GArrowMapLookupOptions *
+garrow_map_lookup_options_new(GArrowScalar *query_key,
+                              GArrowMapLookupOccurrence occurrence);
+
+/**
+ * GArrowListSliceReturnFixedSizeList:
+ * @GARROW_LIST_SLICE_RETURN_FIXED_SIZE_LIST_AUTO: Return the same type which was passed
+ * in (default).
+ * @GARROW_LIST_SLICE_RETURN_FIXED_SIZE_LIST_FALSE: Explicitly return the same type which
+ * was passed in.
+ * @GARROW_LIST_SLICE_RETURN_FIXED_SIZE_LIST_TRUE: Return a FixedSizeListArray. If stop is
+ * after a list element's length, nulls will be appended to create the requested slice
+ * size.
+ *
+ * They correspond to the values of
+ * `std::optional<bool>` for `arrow::compute::ListSliceOptions::return_fixed_size_list`.
+ *
+ * Since: 23.0.0
+ */
+typedef enum {
+  GARROW_LIST_SLICE_RETURN_FIXED_SIZE_LIST_AUTO,
+  GARROW_LIST_SLICE_RETURN_FIXED_SIZE_LIST_FALSE,
+  GARROW_LIST_SLICE_RETURN_FIXED_SIZE_LIST_TRUE,
+} GArrowListSliceReturnFixedSizeList;
+
+/**
+ * GARROW_LIST_SLICE_OPTIONS_STOP_UNSPECIFIED:
+ *
+ * Sentinel value for the stop property in #GArrowListSliceOptions indicating
+ * that the stop value is not set. When this value is used, the slice will
+ * continue to the end of the list.
+ *
+ * Since: 23.0.0
+ */
+#define GARROW_LIST_SLICE_OPTIONS_STOP_UNSPECIFIED -1
+
+#define GARROW_TYPE_LIST_SLICE_OPTIONS             (garrow_list_slice_options_get_type())
+GARROW_AVAILABLE_IN_23_0
+G_DECLARE_DERIVABLE_TYPE(GArrowListSliceOptions,
+                         garrow_list_slice_options,
+                         GARROW,
+                         LIST_SLICE_OPTIONS,
+                         GArrowFunctionOptions)
+struct _GArrowListSliceOptionsClass
+{
+  GArrowFunctionOptionsClass parent_class;
+};
+
+GARROW_AVAILABLE_IN_23_0
+GArrowListSliceOptions *
+garrow_list_slice_options_new(void);
+
+#define GARROW_TYPE_MODE_OPTIONS (garrow_mode_options_get_type())
+GARROW_AVAILABLE_IN_23_0
+G_DECLARE_DERIVABLE_TYPE(
+  GArrowModeOptions, garrow_mode_options, GARROW, MODE_OPTIONS, GArrowFunctionOptions)
+struct _GArrowModeOptionsClass
+{
+  GArrowFunctionOptionsClass parent_class;
+};
+
+GARROW_AVAILABLE_IN_23_0
+GArrowModeOptions *
+garrow_mode_options_new(void);
+
+#define GARROW_TYPE_NULL_OPTIONS (garrow_null_options_get_type())
+GARROW_AVAILABLE_IN_23_0
+G_DECLARE_DERIVABLE_TYPE(
+  GArrowNullOptions, garrow_null_options, GARROW, NULL_OPTIONS, GArrowFunctionOptions)
+struct _GArrowNullOptionsClass
+{
+  GArrowFunctionOptionsClass parent_class;
+};
+
+GARROW_AVAILABLE_IN_23_0
+GArrowNullOptions *
+garrow_null_options_new(void);
+
+#define GARROW_TYPE_PAD_OPTIONS (garrow_pad_options_get_type())
+GARROW_AVAILABLE_IN_23_0
+G_DECLARE_DERIVABLE_TYPE(
+  GArrowPadOptions, garrow_pad_options, GARROW, PAD_OPTIONS, GArrowFunctionOptions)
+struct _GArrowPadOptionsClass
+{
+  GArrowFunctionOptionsClass parent_class;
+};
+
+GARROW_AVAILABLE_IN_23_0
+GArrowPadOptions *
+garrow_pad_options_new(void);
+
+#define GARROW_TYPE_PAIRWISE_OPTIONS (garrow_pairwise_options_get_type())
+GARROW_AVAILABLE_IN_23_0
+G_DECLARE_DERIVABLE_TYPE(GArrowPairwiseOptions,
+                         garrow_pairwise_options,
+                         GARROW,
+                         PAIRWISE_OPTIONS,
+                         GArrowFunctionOptions)
+struct _GArrowPairwiseOptionsClass
+{
+  GArrowFunctionOptionsClass parent_class;
+};
+
+GARROW_AVAILABLE_IN_23_0
+GArrowPairwiseOptions *
+garrow_pairwise_options_new(void);
+
 G_END_DECLS
