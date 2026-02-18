@@ -69,6 +69,7 @@ arrow_components = {
             'compute/kernels/scalar_cast_numeric.cc',
             'compute/kernels/scalar_cast_string.cc',
             'compute/kernels/scalar_cast_temporal.cc',
+            'compute/kernels/temporal_internal.cc',
             'compute/kernels/util_internal.cc',
             'compute/kernels/vector_hash.cc',
             'compute/kernels/vector_selection.cc',

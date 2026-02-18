@@ -47,6 +47,12 @@ ctest_options=()
 if ! type azurite >/dev/null 2>&1; then
   exclude_tests+=("arrow-azurefs-test")
 fi
+if ! type storage-testbench >/dev/null 2>&1; then
+  exclude_tests+=("arrow-gcsfs-test")
+fi
+if ! type minio >/dev/null 2>&1; then
+  exclude_tests+=("arrow-s3fs-test")
+fi
 case "$(uname)" in
   Linux)
     n_jobs=$(nproc)
@@ -114,6 +120,41 @@ else
     "$@"
 fi
 
+# This is for testing find_package(Arrow).
+#
+# Note that this is not a perfect solution. We should improve this
+# later.
+#
+# * This is ad-hoc
+# * This doesn't test other CMake packages such as ArrowDataset
+if [ "${ARROW_USE_MESON:-OFF}" = "OFF" ] && \
+     [ "${ARROW_EMSCRIPTEN:-OFF}" = "OFF" ] && \
+     [ "${ARROW_USE_ASAN:-OFF}" = "OFF" ]; then
+  CMAKE_PREFIX_PATH="${CMAKE_INSTALL_PREFIX:-${ARROW_HOME}}"
+  case "$(uname)" in
+    MINGW*)
+      # <prefix>/lib/cmake/ isn't searched on Windows.
+      #
+      # See also:
+      # https://cmake.org/cmake/help/latest/command/find_package.html#config-mode-search-procedure
+      CMAKE_PREFIX_PATH+="/lib/cmake/"
+      ;;
+  esac
+  if [ -n "${VCPKG_ROOT}" ] && [ -n "${VCPKG_DEFAULT_TRIPLET}" ]; then
+    CMAKE_PREFIX_PATH+=";${VCPKG_ROOT}/installed/${VCPKG_DEFAULT_TRIPLET}"
+  fi
+  cmake \
+    -S "${source_dir}/examples/minimal_build" \
+    -B "${build_dir}/examples/minimal_build" \
+    -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}"
+  cmake --build "${build_dir}/examples/minimal_build"
+  pushd "${source_dir}/examples/minimal_build"
+  # PATH= is for Windows.
+  PATH="${CMAKE_INSTALL_PREFIX:-${ARROW_HOME}}/bin:${PATH}" \
+    "${build_dir}/examples/minimal_build/arrow-example"
+  popd
+fi
+
 if [ "${ARROW_BUILD_EXAMPLES}" == "ON" ]; then
     examples=$(find "${binary_output_dir}" -executable -name "*example")
     if [ "${examples}" == "" ]; then
@@ -143,6 +184,7 @@ if [ "${ARROW_FUZZING}" == "ON" ]; then
     if [ "${ARROW_PARQUET}" == "ON" ]; then
       "${binary_output_dir}/parquet-arrow-fuzz" "${ARROW_TEST_DATA}"/parquet/fuzzing/*-testcase-*
     fi
+    # TODO run CSV fuzz regression tests once we have any
 fi
 
 popd
