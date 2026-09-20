@@ -401,7 +401,7 @@ def array(object obj, type=None, mask=None, size=None, from_pandas=None,
             result = _sequence_to_array(obj, mask, size, type, pool, c_from_pandas)
 
     if extension_type is not None:
-        result = ExtensionArray.from_storage(extension_type, result)
+        result = extension_type.wrap_array(result)
     return result
 
 
@@ -1148,7 +1148,6 @@ cdef class Array(_PandasConvertible):
         >>> left = pa.array(["one", "two", "three"])
         >>> right = pa.array(["two", None, "two-and-a-half", "three"])
         >>> print(left.diff(right)) # doctest: +SKIP
-
         @@ -0, +0 @@
         -"one"
         @@ -2, +1 @@

@@ -16,8 +16,7 @@
 # under the License.
 
 ARG arch=amd64
-FROM ${arch}/debian:13
-ARG arch
+FROM --platform=linux/${arch} debian:13
 
 ENV DEBIAN_FRONTEND noninteractive
 
@@ -53,7 +52,6 @@ RUN apt-get update -y -q && \
         git \
         libbenchmark-dev \
         libboost-filesystem-dev \
-        libboost-system-dev \
         libbrotli-dev \
         libbz2-dev \
         libc6-dbg \
