@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+#
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
@@ -15,18 +17,11 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import os
-from contextlib import contextmanager
-from tempfile import mkdtemp, TemporaryDirectory
+set -eux
 
+# Some builds such as C/GLib seem to use a different umask at some point,
+# and the ccache files end up not world-readable which can prevent caching on GHA.
 
-@contextmanager
-def tmpdir(preserve=False, prefix="arrow-archery-", preserve_dir=None):
-    if preserve and preserve_dir is not None:
-        os.makedirs(preserve_dir, exist_ok=True)
-        yield preserve_dir
-    elif preserve:
-        yield mkdtemp(prefix=prefix)
-    else:
-        with TemporaryDirectory(prefix=prefix) as tmp:
-            yield tmp
+cache_dir=$(ccache --get-config cache_dir)
+
+find ${cache_dir} -type f -exec chmod 644 {} \;

@@ -1,3 +1,4 @@
+# Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
 # regarding copyright ownership.  The ASF licenses this file
@@ -17,8 +18,11 @@
 require "bigdecimal"
 
 require_relative "bitmap"
+require_relative "bitmap-builder"
 
 module ArrowFormat
+  using FlatBuffers::AppendAsBytes if FlatBuffers.const_defined?(:AppendAsBytes)
+
   class Array
     attr_reader :type
     attr_reader :size
@@ -158,7 +162,25 @@ module ArrowFormat
   end
 
   class PrimitiveArray < Array
-    def initialize(type, size, validity_buffer, values_buffer)
+    include BufferAlignable
+
+    def initialize(*args)
+      n_args = args.size
+      if self.class.respond_to?(:type)
+        type = self.class.type
+        expected_n_args = "1 or 3"
+      else
+        type = args.shift
+        expected_n_args = "2 or 4"
+      end
+      args = build_data(args[0], type) if args.size == 1
+      if args.size != 3
+        message =
+          "wrong number of arguments " +
+          "(given #{n_args}, expected #{expected_n_args})"
+        raise ArgumentError, message
+      end
+      size, validity_buffer, values_buffer = args
       super(type, size, validity_buffer)
       @values_buffer = values_buffer
     end
@@ -183,11 +205,34 @@ module ArrowFormat
     def element_size
       IO::Buffer.size_of(@type.buffer_type)
     end
+
+    def build_data(data, type)
+      n = 0
+      validity_buffer_builder = nil
+      buffer = +"".b
+      pack_template = type.pack_template
+      data.each_with_index do |value, i|
+        if value.nil?
+          validity_buffer_builder ||= SparseBitmapBuilder.new
+          validity_buffer_builder.unset(i)
+          buffer.append_as_bytes([0].pack(pack_template))
+        else
+          buffer.append_as_bytes([value].pack(pack_template))
+        end
+        n += 1
+      end
+      validity_buffer = validity_buffer_builder&.finish(n)
+      pad!(buffer, buffer_padding_size(buffer))
+      buffer.freeze
+      return n, validity_buffer, IO::Buffer.for(buffer)
+    end
   end
 
   class BooleanArray < PrimitiveArray
-    def initialize(size, validity_buffer, values_buffer)
-      super(BooleanType.singleton, size, validity_buffer, values_buffer)
+    class << self
+      def type
+        BooleanType.singleton
+      end
     end
 
     def to_a
@@ -210,12 +255,29 @@ module ArrowFormat
       super
       @values_bitmap = nil
     end
+
+    def build_data(data, type)
+      n = 0
+      validity_buffer_builder = nil
+      values_buffer_builder = DenseBitmapBuilder.new
+      data.each_with_index do |value, i|
+        if value.nil?
+          validity_buffer_builder ||= SparseBitmapBuilder.new
+          validity_buffer_builder.unset(i)
+          values_buffer_builder.append(false)
+        elsif value
+          values_buffer_builder.append(true)
+        else
+          values_buffer_builder.append(false)
+        end
+        n += 1
+      end
+      validity_buffer = validity_buffer_builder&.finish(n)
+      return n, validity_buffer, values_buffer_builder.finish
+    end
   end
 
   class IntArray < PrimitiveArray
-    def initialize(size, validity_buffer, values_buffer)
-      super(self.class.type, size, validity_buffer, values_buffer)
-    end
   end
 
   class Int8Array < IntArray
@@ -283,9 +345,6 @@ module ArrowFormat
   end
 
   class FloatingPointArray < PrimitiveArray
-    def initialize(size, validity_buffer, values_buffer)
-      super(self.class.type, size, validity_buffer, values_buffer)
-    end
   end
 
   class Float32Array < FloatingPointArray
@@ -308,9 +367,6 @@ module ArrowFormat
   end
 
   class DateArray < TemporalArray
-    def initialize(size, validity_buffer, values_buffer)
-      super(self.class.type, size, validity_buffer, values_buffer)
-    end
   end
 
   class Date32Array < DateArray

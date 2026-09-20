@@ -15,18 +15,31 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import os
-from contextlib import contextmanager
-from tempfile import mkdtemp, TemporaryDirectory
+class TestDenseBitmapBuilder < Test::Unit::TestCase
+  def setup
+    @builder = ArrowFormat::DenseBitmapBuilder.new
+  end
 
+  def test_empty
+    assert_equal(IO::Buffer.for(""), @builder.finish)
+  end
 
-@contextmanager
-def tmpdir(preserve=False, prefix="arrow-archery-", preserve_dir=None):
-    if preserve and preserve_dir is not None:
-        os.makedirs(preserve_dir, exist_ok=True)
-        yield preserve_dir
-    elif preserve:
-        yield mkdtemp(prefix=prefix)
-    else:
-        with TemporaryDirectory(prefix=prefix) as tmp:
-            yield tmp
+  def test_1byte
+    8.times do |i|
+      @builder.append(i.odd?)
+    end
+    buffer = [0b10101010].pack("C") + "\x00" * 63
+    assert_equal(IO::Buffer.for(buffer),
+                 @builder.finish)
+  end
+
+  def test_9bits
+    8.times do |i|
+      @builder.append(i.odd?)
+    end
+    @builder.append(true)
+    buffer = [0b10101010].pack("C") + [0b00000001].pack("C") + "\x00" * 62
+    assert_equal(IO::Buffer.for(buffer),
+                 @builder.finish)
+  end
+end
