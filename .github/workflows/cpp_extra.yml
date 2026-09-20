@@ -136,7 +136,7 @@ jobs:
       DOCKER_VOLUME_PREFIX: ".docker/"
     steps:
       - name: Checkout Arrow
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -228,7 +228,7 @@ jobs:
       REPO: ghcr.io/${{ github.repository }}-dev
     steps:
       - name: Checkout Arrow
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -288,7 +288,7 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: "14.0"
     steps:
       - name: Checkout Arrow
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -340,10 +340,8 @@ jobs:
           ARROW_TEST_DATA: ${{ github.workspace }}/testing/data
           PARQUET_TEST_DATA: ${{ github.workspace }}/cpp/submodules/parquet-testing/data
         run: |
-          # MinIO is required
-          exclude_tests="arrow-s3fs-test"
           # unstable
-          exclude_tests="${exclude_tests}|arrow-acero-asof-join-node-test"
+          exclude_tests="arrow-acero-asof-join-node-test"
           exclude_tests="${exclude_tests}|arrow-acero-hash-join-node-test"
           ctest \
             --exclude-regex "${exclude_tests}" \
@@ -389,22 +387,26 @@ jobs:
       UBUNTU: 24.04
     steps:
       - name: Checkout Arrow
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
           fetch-depth: 0
           submodules: recursive
-      - name: Restore Docker Volumes
-        uses: apache/infrastructure-actions/stash/restore@0ba14156c9f4c3cfbe4b0c9f36339ab0f8d81e53
-        with:
-          path: .docker
-          key: ubuntu-cpp-odbc
       - name: Setup Python on hosted runner
         uses: actions/setup-python@v6
         with:
           python-version: 3
       - name: Setup Archery
         run: python3 -m pip install -e dev/archery[docker]
+      - name: Set Up Dremio Instance
+        run: |
+          docker compose up -d dremio
+          cpp/src/arrow/flight/sql/odbc/tests/dremio/set_up_dremio_instance.sh
+      - name: Restore Docker Volumes
+        uses: apache/infrastructure-actions/stash/restore@0ba14156c9f4c3cfbe4b0c9f36339ab0f8d81e53
+        with:
+          path: .docker
+          key: ubuntu-cpp-odbc
       - name: Execute Docker Build
         env:
           ARCHERY_DOCKER_USER: ${{ secrets.DOCKERHUB_USER }}
@@ -462,7 +464,7 @@ jobs:
       ARROW_MIMALLOC: OFF
     steps:
       - name: Checkout Arrow
-        uses: actions/checkout@v6.0.1
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -606,7 +608,7 @@ jobs:
       VCPKG_OVERLAY_TRIPLETS: ${{ github.workspace }}/ci/vcpkg
     steps:
       - name: Checkout Arrow
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -705,7 +707,7 @@ jobs:
 
           tree odbc-installer
       - name: Checkout Arrow
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
           fetch-depth: 1

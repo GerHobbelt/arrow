@@ -115,7 +115,7 @@ jobs:
           free -h
           lscpu
       - name: Checkout Arrow
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -176,7 +176,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout Arrow
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -232,7 +232,7 @@ jobs:
           sysctl -a | grep cpu
           sysctl -a | grep "hw.optional"
       - name: Checkout Arrow
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -293,6 +293,8 @@ jobs:
       - name: Test
         shell: bash
         run: |
+          # MinIO is installed on ${ARROW_HOME}/bin
+          export PATH="${ARROW_HOME}/bin:${PATH}"
           sudo sysctl -w kern.coredump=1
           sudo sysctl -w kern.corefile=/tmp/core.%N.%P
           ulimit -c unlimited  # must enable within the same shell
@@ -363,7 +365,7 @@ jobs:
             /d 1 `
             /f
       - name: Checkout Arrow
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
           fetch-depth: 0
