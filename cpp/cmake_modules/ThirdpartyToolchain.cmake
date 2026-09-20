@@ -622,10 +622,8 @@ endif()
 if(DEFINED ENV{ARROW_CARES_URL})
   set(CARES_SOURCE_URL "$ENV{ARROW_CARES_URL}")
 else()
-  string(REPLACE "." "_" ARROW_CARES_BUILD_VERSION_UNDERSCORES
-                 ${ARROW_CARES_BUILD_VERSION})
   set_urls(CARES_SOURCE_URL
-           "https://github.com/c-ares/c-ares/releases/download/cares-${ARROW_CARES_BUILD_VERSION_UNDERSCORES}/c-ares-${ARROW_CARES_BUILD_VERSION}.tar.gz"
+           "https://github.com/c-ares/c-ares/releases/download/v${ARROW_CARES_BUILD_VERSION}/c-ares-${ARROW_CARES_BUILD_VERSION}.tar.gz"
            "${THIRDPARTY_MIRROR_URL}/cares-${ARROW_CARES_BUILD_VERSION}.tar.gz")
 endif()
 
@@ -1934,13 +1932,6 @@ function(build_protobuf)
   list(APPEND CMAKE_MESSAGE_INDENT "Protobuf: ")
   message(STATUS "Building Protocol Buffers from source using FetchContent")
 
-  # Protobuf requires Abseil. Build Abseil first with OVERRIDE_FIND_PACKAGE
-  # so that protobuf doesn't build its own copy and we can reuse it on google-cloud-cpp
-  # if it's also being built.
-  if(NOT TARGET absl::strings)
-    build_absl()
-  endif()
-
   set(PROTOBUF_VENDORED
       TRUE
       PARENT_SCOPE)
@@ -2066,9 +2057,7 @@ function(build_protobuf)
 
   # Make protobuf_fc depend on the install completion marker
   add_custom_target(protobuf_fc DEPENDS "${PROTOBUF_PREFIX}/.protobuf_installed")
-  set(ARROW_BUNDLED_STATIC_LIBS
-      ${ARROW_BUNDLED_STATIC_LIBS} protobuf::libprotobuf
-      PARENT_SCOPE)
+  list(APPEND ARROW_BUNDLED_STATIC_LIBS protobuf::libprotobuf)
 
   if(CMAKE_CROSSCOMPILING)
     # If we are cross compiling, we need to build protoc for the host
@@ -2076,12 +2065,21 @@ function(build_protobuf)
     set(PROTOBUF_HOST_PREFIX "${CMAKE_CURRENT_BINARY_DIR}/protobuf_ep_host-install")
     set(PROTOBUF_HOST_COMPILER "${PROTOBUF_HOST_PREFIX}/bin/protoc")
 
+    # cross-compiled (PyArrow on emscripten) needs utf8_range bundled explicitly.
+    list(APPEND ARROW_BUNDLED_STATIC_LIBS utf8_range)
+
     set(PROTOBUF_HOST_CMAKE_ARGS
         "-DCMAKE_CXX_FLAGS="
         "-DCMAKE_C_FLAGS="
         "-DCMAKE_INSTALL_PREFIX=${PROTOBUF_HOST_PREFIX}"
         -Dprotobuf_BUILD_TESTS=OFF
         -Dprotobuf_DEBUG_POSTFIX=)
+    if(ABSL_VENDORED)
+      # Force protobuf to reuse Arrow's already-extracted absl source
+      # so we don't re-download and we don't have issues with multiple abseil.
+      list(APPEND PROTOBUF_HOST_CMAKE_ARGS -Dprotobuf_FORCE_FETCH_DEPENDENCIES=ON
+           "-DFETCHCONTENT_SOURCE_DIR_ABSL=${absl_SOURCE_DIR}")
+    endif()
 
     # We reuse the FetchContent downloaded source but build it with host compiler
     externalproject_add(protobuf_ep_host
@@ -2096,9 +2094,136 @@ function(build_protobuf)
                           PROPERTIES IMPORTED_LOCATION "${PROTOBUF_HOST_COMPILER}")
 
     add_dependencies(arrow::protobuf::host_protoc protobuf_ep_host)
+    # For cross-compilation along with ExternalProject we need to
+    # manually include absl deps to the bundled static libs so that
+    # they are available for the generated code in protobuf v31.
+    list(APPEND
+         ARROW_BUNDLED_STATIC_LIBS
+         absl::bad_any_cast_impl
+         absl::bad_optional_access
+         absl::bad_variant_access
+         absl::base
+         absl::city
+         absl::civil_time
+         absl::cord
+         absl::cord_internal
+         absl::cordz_functions
+         absl::cordz_handle
+         absl::cordz_info
+         absl::cordz_sample_token
+         absl::crc32c
+         absl::crc_cord_state
+         absl::crc_cpu_detect
+         absl::crc_internal
+         absl::debugging_internal
+         absl::decode_rust_punycode
+         absl::demangle_internal
+         absl::demangle_rust
+         absl::die_if_null
+         absl::examine_stack
+         absl::exponential_biased
+         absl::failure_signal_handler
+         absl::flags_commandlineflag
+         absl::flags_commandlineflag_internal
+         absl::flags_config
+         absl::flags_internal
+         absl::flags_marshalling
+         absl::flags_parse
+         absl::flags_private_handle_accessor
+         absl::flags_program_name
+         absl::flags_reflection
+         absl::flags_usage
+         absl::flags_usage_internal
+         absl::graphcycles_internal
+         absl::hash
+         absl::hashtablez_sampler
+         absl::int128
+         absl::kernel_timeout_internal
+         absl::leak_check
+         absl::log_globals
+         absl::log_initialize
+         absl::log_internal_check_op
+         absl::log_internal_conditions
+         absl::log_internal_fnmatch
+         absl::log_internal_format
+         absl::log_internal_globals
+         absl::log_internal_log_sink_set
+         absl::log_internal_message
+         absl::log_internal_nullguard
+         absl::log_internal_proto
+         absl::log_severity
+         absl::log_sink
+         absl::low_level_hash
+         absl::malloc_internal
+         absl::periodic_sampler
+         absl::poison
+         absl::random_distributions
+         absl::random_internal_distribution_test_util
+         absl::random_internal_platform
+         absl::random_internal_pool_urbg
+         absl::random_internal_randen
+         absl::random_internal_randen_hwaes
+         absl::random_internal_randen_hwaes_impl
+         absl::random_internal_randen_slow
+         absl::random_internal_seed_material
+         absl::random_seed_gen_exception
+         absl::random_seed_sequences
+         absl::raw_hash_set
+         absl::raw_logging_internal
+         absl::scoped_set_env
+         absl::spinlock_wait
+         absl::stacktrace
+         absl::status
+         absl::statusor
+         absl::str_format_internal
+         absl::strerror
+         absl::strings
+         absl::strings_internal
+         absl::symbolize
+         absl::synchronization
+         absl::throw_delegate
+         absl::time
+         absl::time_zone
+         absl::utf8_for_code_point
+         absl::vlog_config_internal)
   endif()
+  set(ARROW_BUNDLED_STATIC_LIBS
+      "${ARROW_BUNDLED_STATIC_LIBS}"
+      PARENT_SCOPE)
   list(POP_BACK CMAKE_MESSAGE_INDENT)
 endfunction()
+
+# Abseil must be resolved before Protobuf because Protobuf 22+ requires
+# Abseil during its own configure. See GH-49764.
+if(ARROW_WITH_GOOGLE_CLOUD_CPP
+   OR ARROW_WITH_GRPC
+   OR ARROW_WITH_PROTOBUF)
+  # Abseil 20230125 released CRC32C which is necessary for GCS builds
+  set(ARROW_ABSL_REQUIRED_VERSION 20230125)
+  # Google Cloud C++ SDK, gRPC and any dependency that pulls Protobuf
+  # requires Abseil.
+  if(ARROW_WITH_GOOGLE_CLOUD_CPP
+     OR ARROW_ORC
+     OR ARROW_SUBSTRAIT
+     OR ARROW_WITH_OPENTELEMETRY)
+    set(ARROW_ABSL_CMAKE_PACKAGE_NAME Arrow)
+    set(ARROW_ABSL_PC_PACKAGE_NAME arrow)
+  else()
+    set(ARROW_ABSL_CMAKE_PACKAGE_NAME ArrowFlight)
+    set(ARROW_ABSL_PC_PACKAGE_NAME arrow-flight)
+  endif()
+  resolve_dependency(absl
+                     ARROW_CMAKE_PACKAGE_NAME
+                     ${ARROW_ABSL_CMAKE_PACKAGE_NAME}
+                     ARROW_PC_PACKAGE_NAME
+                     ${ARROW_ABSL_PC_PACKAGE_NAME}
+                     HAVE_ALT
+                     TRUE
+                     FORCE_ANY_NEWER_VERSION
+                     TRUE
+                     REQUIRED_VERSION
+                     ${ARROW_ABSL_REQUIRED_VERSION})
+endif()
 
 if(ARROW_WITH_PROTOBUF)
   if(ARROW_FLIGHT_SQL)
@@ -2657,34 +2782,33 @@ if(ARROW_BUILD_BENCHMARKS)
                      FALSE)
 endif()
 
-macro(build_rapidjson)
-  message(STATUS "Building RapidJSON from source")
-  set(RAPIDJSON_PREFIX
-      "${CMAKE_CURRENT_BINARY_DIR}/rapidjson_ep/src/rapidjson_ep-install")
-  set(RAPIDJSON_CMAKE_ARGS
-      ${EP_COMMON_CMAKE_ARGS}
-      -DRAPIDJSON_BUILD_DOC=OFF
-      -DRAPIDJSON_BUILD_EXAMPLES=OFF
-      -DRAPIDJSON_BUILD_TESTS=OFF
-      "-DCMAKE_INSTALL_PREFIX=${RAPIDJSON_PREFIX}")
+function(build_rapidjson)
+  list(APPEND CMAKE_MESSAGE_INDENT "RapidJSON: ")
+  message(STATUS "Building from source")
 
-  externalproject_add(rapidjson_ep
-                      ${EP_COMMON_OPTIONS}
-                      PREFIX "${CMAKE_BINARY_DIR}"
-                      URL ${RAPIDJSON_SOURCE_URL}
-                      URL_HASH "SHA256=${ARROW_RAPIDJSON_BUILD_SHA256_CHECKSUM}"
-                      CMAKE_ARGS ${RAPIDJSON_CMAKE_ARGS})
-
-  set(RAPIDJSON_INCLUDE_DIR "${RAPIDJSON_PREFIX}/include")
-  # The include directory must exist before it is referenced by a target.
-  file(MAKE_DIRECTORY "${RAPIDJSON_INCLUDE_DIR}")
+  fetchcontent_declare(rapidjson
+                       ${FC_DECLARE_COMMON_OPTIONS} OVERRIDE_FIND_PACKAGE
+                       URL ${RAPIDJSON_SOURCE_URL}
+                       URL_HASH "SHA256=${ARROW_RAPIDJSON_BUILD_SHA256_CHECKSUM}")
+  prepare_fetchcontent()
+  set(LIB_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/lib")
+  set(RAPIDJSON_BUILD_DOC OFF)
+  set(RAPIDJSON_BUILD_EXAMPLES OFF)
+  set(RAPIDJSON_BUILD_TESTS OFF)
+  fetchcontent_makeavailable(rapidjson)
+  if(CMAKE_VERSION VERSION_LESS 3.28)
+    set_property(DIRECTORY ${rapidjson_SOURCE_DIR} PROPERTY EXCLUDE_FROM_ALL TRUE)
+  endif()
 
   add_library(RapidJSON INTERFACE IMPORTED)
-  target_include_directories(RapidJSON INTERFACE "${RAPIDJSON_INCLUDE_DIR}")
-  add_dependencies(RapidJSON rapidjson_ep)
+  target_include_directories(RapidJSON INTERFACE "${rapidjson_SOURCE_DIR}/include")
+  add_dependencies(RapidJSON rapidjson)
 
-  set(RAPIDJSON_VENDORED TRUE)
-endmacro()
+  set(RAPIDJSON_VENDORED
+      TRUE
+      PARENT_SCOPE)
+  list(POP_BACK CMAKE_MESSAGE_INDENT)
+endfunction()
 
 if(ARROW_WITH_RAPIDJSON)
   set(ARROW_RAPIDJSON_REQUIRED_VERSION "1.1.0")
@@ -3253,30 +3377,6 @@ function(build_grpc)
   list(POP_BACK CMAKE_MESSAGE_INDENT)
 endfunction()
 
-if(ARROW_WITH_GOOGLE_CLOUD_CPP OR ARROW_WITH_GRPC)
-  # Abseil 20230125 released CRC32C which is necessary for GCS builds
-  set(ARROW_ABSL_REQUIRED_VERSION 20230125)
-  # Google Cloud C++ SDK and gRPC require Google Abseil
-  if(ARROW_WITH_GOOGLE_CLOUD_CPP)
-    set(ARROW_ABSL_CMAKE_PACKAGE_NAME Arrow)
-    set(ARROW_ABSL_PC_PACKAGE_NAME arrow)
-  else()
-    set(ARROW_ABSL_CMAKE_PACKAGE_NAME ArrowFlight)
-    set(ARROW_ABSL_PC_PACKAGE_NAME arrow-flight)
-  endif()
-  resolve_dependency(absl
-                     ARROW_CMAKE_PACKAGE_NAME
-                     ${ARROW_ABSL_CMAKE_PACKAGE_NAME}
-                     ARROW_PC_PACKAGE_NAME
-                     ${ARROW_ABSL_PC_PACKAGE_NAME}
-                     HAVE_ALT
-                     TRUE
-                     FORCE_ANY_NEWER_VERSION
-                     TRUE
-                     REQUIRED_VERSION
-                     ${ARROW_ABSL_REQUIRED_VERSION})
-endif()
-
 if(ARROW_WITH_GRPC)
   if(NOT ARROW_ENABLE_THREADING)
     message(FATAL_ERROR "Can't use gRPC with ARROW_ENABLE_THREADING=OFF")
@@ -3481,9 +3581,9 @@ function(build_google_cloud_cpp_storage)
   # Workaround missing BCRYPT_RSA_ALG_HANDLE macro in older MinGW-w64 headers.
   # google-cloud-cpp v3+ uses it without guards in sign_using_sha256.cc.
   set(GOOGLE_CLOUD_CPP_PATCH_COMMAND)
+  find_program(PATCH patch)
   if(MINGW AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "11")
     # This is for RTools 40.
-    find_program(PATCH patch)
     if(PATCH)
       set(GOOGLE_CLOUD_CPP_PATCH_COMMAND
           ${PATCH} -p1 -i ${CMAKE_CURRENT_LIST_DIR}/google-cloud-cpp-bcrypt-mingw.patch)
@@ -3494,6 +3594,16 @@ function(build_google_cloud_cpp_storage)
             ${GIT} apply ${CMAKE_CURRENT_LIST_DIR}/google-cloud-cpp-bcrypt-mingw.patch)
       endif()
     endif()
+  endif()
+
+  # Reproducible builds are only a requirement for the Linux packaging jobs.
+  if(PATCH AND NOT WIN32)
+    list(APPEND
+         GOOGLE_CLOUD_CPP_PATCH_COMMAND
+         ${PATCH}
+         -p1
+         -i
+         ${CMAKE_CURRENT_LIST_DIR}/google-cloud-cpp-reproducible-builds.patch)
   endif()
 
   fetchcontent_declare(google_cloud_cpp
@@ -3926,6 +4036,15 @@ function(build_awssdk)
   prepare_fetchcontent()
   set(BUILD_DEPS OFF)
   set(BUILD_TOOL OFF)
+  # This is for aws-lc. -ffile-prefix-map is needed for reproducible
+  # builds. If ASM flags doesn't have --file-prefix-map, it may
+  # produce different binaries. Only aws-lc uses assembler. So this is
+  # for aws-lc.
+  if(CMAKE_CXX_FLAGS MATCHES "-ffile-prefix-map=" AND NOT CMAKE_ASM_FLAGS MATCHES
+                                                      "-ffile-prefix-map=")
+    string(REGEX MATCH " -ffile-prefix-map=[^ ]+ " FFILE_PREFIX_MAP "${CMAKE_CXX_FLAGS}")
+    string(APPEND CMAKE_ASM_FLAGS "${FFILE_PREFIX_MAP}")
+  endif()
   set(CMAKE_UNITY_BUILD OFF) # Unity build causes some build errors.
   set(ENABLE_TESTING OFF)
   set(IN_SOURCE_BUILD ON)
