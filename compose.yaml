@@ -73,6 +73,7 @@ x-cpp: &cpp
 x-sccache: &sccache
   AWS_ACCESS_KEY_ID:
   AWS_SECRET_ACCESS_KEY:
+  AWS_SESSION_TOKEN:
   SCCACHE_BUCKET:
   SCCACHE_REGION:
   SCCACHE_S3_KEY_PREFIX: ${SCCACHE_S3_KEY_PREFIX:-sccache}
@@ -1686,6 +1687,7 @@ services:
         tz: ${TZ}
         r_prune_deps: ${R_PRUNE_DEPS}
         r_custom_ccache: ${R_CUSTOM_CCACHE}
+        r_update_clang: ${R_UPDATE_CLANG}
     shm_size: *shm-size
     environment:
       <<: [*common, *sccache]

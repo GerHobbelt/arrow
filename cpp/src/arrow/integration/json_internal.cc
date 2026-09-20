@@ -36,7 +36,6 @@
 #include "arrow/array/builder_time.h"
 #include "arrow/extension_type.h"
 #include "arrow/ipc/dictionary.h"
-#include "arrow/json/json_writer_internal.h"
 #include "arrow/record_batch.h"
 #include "arrow/result.h"
 #include "arrow/scalar.h"
@@ -66,7 +65,7 @@ using arrow::ipc::DictionaryFieldMapper;
 using arrow::ipc::DictionaryMemo;
 using arrow::ipc::internal::FieldPosition;
 
-using JsonWriter = arrow::json::JsonWriter;
+using JsonWriter = arrow::internal::JsonWriter;
 
 namespace arrow::internal::integration::json {
 
@@ -1953,7 +1952,7 @@ class ArrayReader {
   Result<std::shared_ptr<ArrayData>> Parse() {
     ARROW_ASSIGN_OR_RAISE(length_, GetMemberInt<int32_t>(obj_, "count"));
 
-    if (::arrow::internal::may_have_validity_bitmap(type_->id())) {
+    if (::arrow::internal::may_have_validity_bitmap(type_->storage_id())) {
       // Null and union types don't have a validity bitmap
       RETURN_NOT_OK(ParseValidityBitmap());
     }
