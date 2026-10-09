@@ -1420,6 +1420,27 @@ macro(find_curl ARROW_CURL_PACKAGE_PREFIX)
 endmacro()
 
 # ----------------------------------------------------------------------
+# pkg-config
+
+# SDK libraries (on macOS) may be available without .pc files
+macro(arrow_append_pc_system_library PC_PACKAGE PC_PREFIX FALLBACK)
+  find_package(PkgConfig QUIET)
+  if(PkgConfig_FOUND)
+    pkg_check_modules(${PC_PREFIX}
+                      ${PC_PACKAGE}
+                      NO_CMAKE_PATH
+                      NO_CMAKE_ENVIRONMENT_PATH
+                      QUIET)
+  endif()
+  if(PkgConfig_FOUND AND ${PC_PREFIX}_FOUND)
+    string(APPEND ARROW_PC_REQUIRES_PRIVATE " ${PC_PACKAGE}")
+  else()
+    message(STATUS "No .pc for ${PC_PACKAGE}. Using ${FALLBACK} in arrow.pc")
+    string(APPEND ARROW_PC_LIBS_PRIVATE " ${FALLBACK}")
+  endif()
+endmacro()
+
+# ----------------------------------------------------------------------
 # Snappy
 
 macro(build_snappy)
@@ -3715,6 +3736,25 @@ function(build_google_cloud_cpp_storage)
          ${CMAKE_CURRENT_LIST_DIR}/google-cloud-cpp-reproducible-builds.patch)
   endif()
 
+  # google-cloud-cpp, which depends on OpenSSL,
+  # does not yet support OpenSSL 4.x.
+  #
+  # TODO: Once google-cloud-cpp supports OpenSSL 4.x,
+  # remove this workaround and google-cloud-cpp-openssl4-compatibility.patch.
+  # https://github.com/googleapis/google-cloud-cpp/issues/16510
+  if(PATCH)
+    if(GOOGLE_CLOUD_CPP_PATCH_COMMAND)
+      list(APPEND GOOGLE_CLOUD_CPP_PATCH_COMMAND COMMAND)
+    endif()
+
+    list(APPEND
+         GOOGLE_CLOUD_CPP_PATCH_COMMAND
+         ${PATCH}
+         -p1
+         -i
+         ${CMAKE_CURRENT_LIST_DIR}/google-cloud-cpp-openssl4-compatibility.patch)
+  endif()
+
   fetchcontent_declare(google_cloud_cpp
                        ${FC_DECLARE_COMMON_OPTIONS}
                        PATCH_COMMAND ${GOOGLE_CLOUD_CPP_PATCH_COMMAND}
@@ -4346,6 +4386,25 @@ if(ARROW_WITH_AZURE_SDK)
   resolve_dependency(Azure REQUIRED_VERSION 1.10.2)
   set(AZURE_SDK_LINK_LIBRARIES Azure::azure-storage-files-datalake
                                Azure::azure-storage-blobs Azure::azure-identity)
+  if(AZURE_SDK_VENDORED AND NOT WIN32)
+    find_curl(ARROW)
+    find_package(LibXml2 REQUIRED)
+    list(APPEND ARROW_SYSTEM_DEPENDENCIES LibXml2)
+  endif()
+endif()
+
+if(ARROW_BUILD_STATIC)
+  if((ARROW_GCS AND google_cloud_cpp_storage_SOURCE STREQUAL "BUNDLED")
+     OR (ARROW_AZURE
+         AND AZURE_SDK_VENDORED
+         AND NOT WIN32))
+    arrow_append_pc_system_library("libcurl" ARROW_CURL_PC "-lcurl")
+  endif()
+  if(ARROW_AZURE
+     AND AZURE_SDK_VENDORED
+     AND NOT WIN32)
+    arrow_append_pc_system_library("libxml-2.0" ARROW_LIBXML2_PC "-lxml2")
+  endif()
 endif()
 
 # ----------------------------------------------------------------------
