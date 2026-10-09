@@ -68,6 +68,7 @@ set(ARROW_THIRDPARTY_DEPENDENCIES
     Snappy
     Substrait
     Thrift
+    uriparser
     utf8proc
     xsimd
     ZLIB
@@ -220,6 +221,8 @@ macro(build_dependency DEPENDENCY_NAME)
     build_substrait()
   elseif("${DEPENDENCY_NAME}" STREQUAL "Thrift")
     build_thrift()
+  elseif("${DEPENDENCY_NAME}" STREQUAL "uriparser")
+    build_uriparser()
   elseif("${DEPENDENCY_NAME}" STREQUAL "utf8proc")
     build_utf8proc()
   elseif("${DEPENDENCY_NAME}" STREQUAL "xsimd")
@@ -807,6 +810,14 @@ else()
   set(THRIFT_SOURCE_URL
       "https://www.apache.org/dyn/closer.lua/thrift/${ARROW_THRIFT_BUILD_VERSION}/thrift-${ARROW_THRIFT_BUILD_VERSION}.tar.gz?action=download"
       "https://dlcdn.apache.org/thrift/${ARROW_THRIFT_BUILD_VERSION}/thrift-${ARROW_THRIFT_BUILD_VERSION}.tar.gz"
+  )
+endif()
+
+if(DEFINED ENV{ARROW_URIPARSER_URL})
+  set(ARROW_URIPARSER_SOURCE_URL "$ENV{ARROW_URIPARSER_URL}")
+else()
+  set_urls(ARROW_URIPARSER_SOURCE_URL
+           "https://github.com/uriparser/uriparser/releases/download/uriparser-${ARROW_URIPARSER_BUILD_VERSION}/uriparser-${ARROW_URIPARSER_BUILD_VERSION}.tar.bz2"
   )
 endif()
 
@@ -3285,6 +3296,50 @@ if(ARROW_WITH_BZ2)
   endif()
 endif()
 
+# ----------------------------------------------------------------------
+# uriparser library
+
+function(build_uriparser)
+  list(APPEND CMAKE_MESSAGE_INDENT "uriparser: ")
+  message(STATUS "Building uriparser from source")
+
+  fetchcontent_declare(uriparser
+                       ${FC_DECLARE_COMMON_OPTIONS} OVERRIDE_FIND_PACKAGE
+                       URL ${ARROW_URIPARSER_SOURCE_URL}
+                       URL_HASH "SHA256=${ARROW_URIPARSER_BUILD_SHA256_CHECKSUM}")
+
+  prepare_fetchcontent()
+
+  set(URIPARSER_BUILD_DOCS OFF)
+  set(URIPARSER_BUILD_TESTS OFF)
+  set(URIPARSER_BUILD_TOOLS OFF)
+  # Arrow only uses the char (not wchar_t) flavor of the API.
+  set(URIPARSER_BUILD_WCHAR_T OFF)
+  # Don't install uriparser into Arrow's install prefix.
+  set(URIPARSER_ENABLE_INSTALL OFF)
+  if(MSVC AND ARROW_USE_STATIC_CRT)
+    set(URIPARSER_MSVC_STATIC_CRT ON)
+  endif()
+
+  fetchcontent_makeavailable(uriparser)
+
+  list(PREPEND ARROW_BUNDLED_STATIC_LIBS uriparser)
+  set(ARROW_BUNDLED_STATIC_LIBS
+      ${ARROW_BUNDLED_STATIC_LIBS}
+      PARENT_SCOPE)
+
+  list(POP_BACK CMAKE_MESSAGE_INDENT)
+endfunction()
+
+# uriparser is mandatory: arrow::util::Uri is part of core Arrow.
+resolve_dependency(uriparser
+                   HAVE_ALT
+                   TRUE
+                   REQUIRED_VERSION
+                   "0.9.6"
+                   PC_PACKAGE_NAMES
+                   liburiparser)
+
 macro(build_utf8proc)
   message(STATUS "Building utf8proc from source")
   set(UTF8PROC_PREFIX "${CMAKE_CURRENT_BINARY_DIR}/utf8proc_ep-install")
@@ -4404,6 +4459,41 @@ if(ARROW_BUILD_STATIC)
      AND AZURE_SDK_VENDORED
      AND NOT WIN32)
     arrow_append_pc_system_library("libxml-2.0" ARROW_LIBXML2_PC "-lxml2")
+  endif()
+  if(ARROW_GCS
+     AND google_cloud_cpp_storage_SOURCE STREQUAL "BUNDLED"
+     AND absl_SOURCE STREQUAL "SYSTEM")
+    # Bundled google-cloud-cpp needs system Abseil for static linking.
+    # Abseil .pc files include indirect link dependencies that -labsl_* flags omit
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+      foreach(ARROW_GCS_ABSL_PC_PACKAGE
+              absl_base
+              absl_cord
+              absl_crc32c
+              absl_memory
+              absl_optional
+              absl_span
+              absl_str_format
+              absl_strings
+              absl_time
+              absl_variant)
+        pkg_check_modules(ARROW_GCS_${ARROW_GCS_ABSL_PC_PACKAGE}_PC
+                          ${ARROW_GCS_ABSL_PC_PACKAGE}
+                          NO_CMAKE_PATH
+                          NO_CMAKE_ENVIRONMENT_PATH
+                          QUIET)
+        if(ARROW_GCS_${ARROW_GCS_ABSL_PC_PACKAGE}_PC_FOUND)
+          string(APPEND ARROW_PC_REQUIRES_PRIVATE " ${ARROW_GCS_ABSL_PC_PACKAGE}")
+        else()
+          message(STATUS "No .pc for ${ARROW_GCS_ABSL_PC_PACKAGE}; "
+                         "static pkg-config metadata may be incomplete. Consider CMake")
+        endif()
+      endforeach()
+    else()
+      message(STATUS "PkgConfig not available. Skipping Abseil dependencies from arrow.pc"
+      )
+    endif()
   endif()
 endif()
 

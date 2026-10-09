@@ -38,6 +38,21 @@ if(ARROW_GCS)
     list(APPEND ARROW_STATIC_INSTALL_INTERFACE_LIBS google-cloud-cpp::storage)
   elseif(google_cloud_cpp_storage_SOURCE STREQUAL "BUNDLED")
     list(APPEND ARROW_STATIC_INSTALL_INTERFACE_LIBS CURL::libcurl)
+    if(absl_SOURCE STREQUAL "SYSTEM")
+      # Bundled google-cloud-cpp with system Abseil needs these for static consumers.
+      list(APPEND
+           ARROW_STATIC_INSTALL_INTERFACE_LIBS
+           absl::base
+           absl::cord
+           absl::crc32c
+           absl::memory
+           absl::optional
+           absl::span
+           absl::str_format
+           absl::strings
+           absl::time
+           absl::variant)
+    endif()
   endif()
 endif()
 
@@ -114,6 +129,10 @@ if(ARROW_WITH_OPENTELEMETRY)
     list(APPEND ARROW_STATIC_INSTALL_INTERFACE_LIBS ${ARROW_OPENTELEMETRY_LIBS})
   endif()
   list(APPEND ARROW_STATIC_INSTALL_INTERFACE_LIBS CURL::libcurl)
+endif()
+
+if(uriparser_SOURCE STREQUAL "SYSTEM")
+  list(APPEND ARROW_STATIC_INSTALL_INTERFACE_LIBS uriparser::uriparser)
 endif()
 
 if(ARROW_WITH_UTF8PROC)
@@ -521,32 +540,13 @@ set(ARROW_VENDORED_SRCS
     vendored/double-conversion/fixed-dtoa.cc
     vendored/double-conversion/string-to-double.cc
     vendored/double-conversion/strtod.cc
-    vendored/musl/strptime.c
-    vendored/uriparser/UriCommon.c
-    vendored/uriparser/UriCompare.c
-    vendored/uriparser/UriEscape.c
-    vendored/uriparser/UriFile.c
-    vendored/uriparser/UriIp4.c
-    vendored/uriparser/UriIp4Base.c
-    vendored/uriparser/UriMemory.c
-    vendored/uriparser/UriNormalize.c
-    vendored/uriparser/UriNormalizeBase.c
-    vendored/uriparser/UriParse.c
-    vendored/uriparser/UriParseBase.c
-    vendored/uriparser/UriQuery.c
-    vendored/uriparser/UriRecompose.c
-    vendored/uriparser/UriResolve.c
-    vendored/uriparser/UriShorten.c)
+    vendored/musl/strptime.c)
 if(APPLE)
   list(APPEND ARROW_VENDORED_SRCS vendored/datetime/ios.mm)
 endif()
 set_source_files_properties(vendored/datetime.cpp PROPERTIES SKIP_UNITY_BUILD_INCLUSION
                                                              ON)
 arrow_add_object_library(ARROW_VENDORED ${ARROW_VENDORED_SRCS})
-# Disable DLL exports in vendored uriparser library
-foreach(ARROW_VENDORED_TARGET ${ARROW_VENDORED_TARGETS})
-  target_compile_definitions(${ARROW_VENDORED_TARGET} PRIVATE URI_STATIC_BUILD)
-endforeach()
 
 set(ARROW_UTIL_SRCS
     util/align_util.cc
@@ -647,12 +647,8 @@ endif()
 
 arrow_add_object_library(ARROW_UTIL ${ARROW_UTIL_SRCS})
 
-# Disable DLL exports in vendored uriparser library
 foreach(ARROW_UTIL_TARGET ${ARROW_UTIL_TARGETS})
-  target_compile_definitions(${ARROW_UTIL_TARGET} PRIVATE URI_STATIC_BUILD)
-endforeach()
-foreach(ARROW_UTIL_TARGET ${ARROW_UTIL_TARGETS})
-  target_link_libraries(${ARROW_UTIL_TARGET} PRIVATE ${ARROW_XSIMD})
+  target_link_libraries(${ARROW_UTIL_TARGET} PRIVATE uriparser::uriparser ${ARROW_XSIMD})
 endforeach()
 
 if(ARROW_WITH_SIMDJSON)
