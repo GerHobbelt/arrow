@@ -124,10 +124,53 @@ jobs:
             --clobber \
             arrow_flight_sql_odbc_unsigned.dll
 
+  # If signed artifacts are available, skip the process
+  odbc-release-check:
+    name: ODBC Check Release for Existing MSI and PKG
+    runs-on: ubuntu-latest
+    if: inputs.odbc_release_step
+    timeout-minutes: 5
+    permissions:
+      # The RC release is a draft, which is only visible with write access
+      contents: write
+    outputs:
+      msi: ${{ steps.check.outputs.msi }}
+      pkg: ${{ steps.check.outputs.pkg }}
+    steps:
+      - name: Check the release assets
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # List the assets first so a failure here fails the step instead of
+          # being read as "no assets".
+          assets="$(gh release view "${GITHUB_REF_NAME}" \
+            --repo ${{ github.repository }} \
+            --json assets \
+            --jq '.assets[].name')"
+
+          msi=false
+          pkg=false
+          while IFS= read -r name; do
+            case "${name}" in
+              Apache-Arrow-Flight-SQL-ODBC-*-win64.msi)
+                msi=true
+                ;;
+              ArrowFlightSQLODBC-*_unsigned.pkg | ArrowFlightSQLODBC-*_ARM64_base.pkg)
+                ;;
+              ArrowFlightSQLODBC-*.pkg)
+                pkg=true
+                ;;
+            esac
+          done <<< "${assets}"
+          echo "msi=${msi}" >> "${GITHUB_OUTPUT}"
+          echo "pkg=${pkg}" >> "${GITHUB_OUTPUT}"
+
   odbc-msvc-upload-msi:
+    needs: odbc-release-check
     name: ODBC Windows Build & Upload Unsigned MSI
     runs-on: windows-2022
-    if: inputs.odbc_release_step
+    if: inputs.odbc_release_step && needs.odbc-release-check.outputs.msi != 'true'
     timeout-minutes: 240
     permissions:
       # Upload to GitHub Release
@@ -358,9 +401,10 @@ jobs:
   # No rebuild is needed here: the ARM64 base PKG and the signed universal
   # dylib are downloaded from the release and only repackaged.
   odbc-macos-upload-pkg:
+    needs: odbc-release-check
     name: ODBC macOS Build & Upload Unsigned Universal PKG
     runs-on: macos-26
-    if: inputs.odbc_release_step
+    if: inputs.odbc_release_step && needs.odbc-release-check.outputs.pkg != 'true'
     timeout-minutes: 30
     permissions:
       # Upload to GitHub Release
