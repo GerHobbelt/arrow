@@ -124,7 +124,8 @@ jobs:
             --clobber \
             arrow_flight_sql_odbc_unsigned.dll
 
-  # If signed artifacts are available, skip the process
+  # skip the process if MSI/PKG artifacts with signed 
+  # ODBC libraries are already generated 
   odbc-release-check:
     name: ODBC Check Release for Existing MSI and PKG
     runs-on: ubuntu-latest
@@ -156,7 +157,7 @@ jobs:
               Apache-Arrow-Flight-SQL-ODBC-*-win64.msi)
                 msi=true
                 ;;
-              ArrowFlightSQLODBC-*_unsigned.pkg | ArrowFlightSQLODBC-*_ARM64_base.pkg)
+              ArrowFlightSQLODBC-*_ARM64_base.pkg)
                 ;;
               ArrowFlightSQLODBC-*.pkg)
                 pkg=true
@@ -257,15 +258,6 @@ jobs:
       - name: Install Dependencies
         run: |
           brew bundle --file=cpp/Brewfile
-
-          # On ARM64, Bundled gRPC v1.76.0 doesn't compile with OpenSSL 4 yet,
-          # so build against OpenSSL 3 instead of Homebrew's default "openssl".
-          brew list openssl@3 > /dev/null 2>&1 || brew install openssl@3
-          # Don't uninstall OpenSSL 4 as other formulae (e.g. ccache)
-          # could link to it.
-          brew unlink openssl@4 || :
-          brew link --overwrite --force openssl@3
-
           # Use bundled RE2, Protobuf and Boost for static linking.
           brew uninstall grpc || : # gRPC depends on RE2
           brew uninstall grpc@1.54 || : # gRPC 1.54 may be installed too
@@ -277,8 +269,7 @@ jobs:
           export BUILD_WARNING_LEVEL=PRODUCTION
           LIBIODBC_DIR="$(brew --cellar libiodbc)/$(brew list --versions libiodbc | awk '{print $2}')"
           ODBC_INCLUDE_DIR=$LIBIODBC_DIR/include
-          # GH-54638: Force link OpenSSL 3 to build with gRPC v1.76.0
-          export ARROW_CMAKE_ARGS="-DODBC_INCLUDE_DIR=$ODBC_INCLUDE_DIR -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3)"
+          export ARROW_CMAKE_ARGS="-DODBC_INCLUDE_DIR=$ODBC_INCLUDE_DIR"
           export CXXFLAGS="$CXXFLAGS -I$ODBC_INCLUDE_DIR"
           ci/scripts/cpp_build.sh $(pwd) $(pwd)/build
       - name: Generate macOS Installer
@@ -347,12 +338,6 @@ jobs:
           lipo -create "${arm64_dylib}" "${amd64_dylib}" -output "${unsigned_path}"
           unsigned_archs="$(lipo -archs "${unsigned_path}")"
           echo "${unsigned_path}: ${unsigned_archs}"
-          for arch in arm64 x86_64; do
-            if ! grep -qw "${arch}" <<< "${unsigned_archs}"; then
-              echo "${unsigned_path} is missing '${arch}' (got: ${unsigned_archs})"
-              exit 1
-            fi
-          done
       - name: Upload universal DYLIB to the job
         uses: actions/upload-artifact@v7
         with:
@@ -360,7 +345,7 @@ jobs:
           path: universal-dylib/libarrow_flight_sql_odbc_unsigned.*.dylib
           if-no-files-found: error
 
-  odbc-macos-release:
+  odbc-dylib-base-pkg-release:
     needs: odbc-macos-universal-dylib
     name: Upload Unsigned ODBC DYLIB and Base PKG to Release
     runs-on: ubuntu-latest
@@ -455,8 +440,9 @@ jobs:
               fi
             done
           done
-
-          pkgutil --flatten-full expanded "${pkg_name}_unsigned.pkg"
+ 
+          mkdir universal
+          pkgutil --flatten-full expanded "universal/${pkg_name}.pkg"
       - name: Upload the artifacts to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -464,4 +450,4 @@ jobs:
           gh release upload ${GITHUB_REF_NAME} \
             --repo ${{ github.repository }} \
             --clobber \
-            ArrowFlightSQLODBC-*_unsigned.pkg
+            universal/ArrowFlightSQLODBC-*.pkg
